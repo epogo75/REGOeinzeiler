@@ -36,6 +36,8 @@ ZU_RAEUMEN=""
 aufraeumen() {
   local stand=$?
   [ -n "$ZU_RAEUMEN" ] && rm -f "$ZU_RAEUMEN"
+  [ -n "${GEHEIM:-}" ] && rm -f "$GEHEIM"
+  [ -n "${SCHLUESSEL_DATEI:-}" ] && rm -f "$SCHLUESSEL_DATEI"
   if [ "$stand" -ne 0 ] && [ -n "${VM_ANGELEGT:-}" ]; then
     warnen "Abgebrochen. Die halbfertige VM $VM_ANGELEGT wird entfernt."
     qm destroy "$VM_ANGELEGT" --purge >/dev/null 2>&1 || true
@@ -107,16 +109,31 @@ while :; do
 done
 unset PASSWORT2
 
-# Ein öffentlicher Schlüssel ist bequemer als ein Passwort und wird deshalb
-# angeboten, wenn einer dasteht.
-SSH_SCHLUESSEL=""
+# Öffentliche Schlüssel sammeln. Der des Wirts liegt nahe, reicht aber nicht:
+# Wer von einem anderen Rechner zugreift -- Notebook, ein weiterer Container --,
+# stünde sonst vor verschlossener Tür.
+SCHLUESSEL_DATEI="$(mktemp)"
+ZU_RAEUMEN="$SCHLUESSEL_DATEI"
+
 for kandidat in /root/.ssh/id_ed25519.pub /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys; do
   if [ -s "$kandidat" ]; then
-    read -r -p "  SSH-Schlüssel aus $kandidat übernehmen? [J/n]: " antwort </dev/tty || true
-    case "${antwort:-J}" in [Nn]*) : ;; *) SSH_SCHLUESSEL="$kandidat" ;; esac
+    read -r -p "  Schlüssel aus $kandidat übernehmen? [J/n]: " antwort </dev/tty || true
+    case "${antwort:-J}" in [Nn]*) : ;; *) cat "$kandidat" >> "$SCHLUESSEL_DATEI" ;; esac
     break
   fi
 done
+
+sagen "  Weitere öffentliche Schlüssel einfügen (leere Zeile beendet):"
+while IFS= read -r zeile </dev/tty; do
+  [ -z "$zeile" ] && break
+  case "$zeile" in
+    ssh-*|ecdsa-*) printf '%s\n' "$zeile" >> "$SCHLUESSEL_DATEI" ;;
+    *) warnen "Das sieht nicht nach einem öffentlichen Schlüssel aus — übergangen." ;;
+  esac
+done
+
+SSH_SCHLUESSEL=""
+[ -s "$SCHLUESSEL_DATEI" ] && SSH_SCHLUESSEL="$SCHLUESSEL_DATEI"
 
 # ------------------------------------------------------------------- Abbild
 
@@ -225,7 +242,6 @@ schritt "Erstanmeldung einrichten"
 # anderen Benutzer des Wirts mitzulesen.
 GEHEIM="$(mktemp)"
 chmod 600 "$GEHEIM"
-ZU_RAEUMEN="$GEHEIM"
 printf '%s' "$PASSWORT" > "$GEHEIM"
 
 qm set "$VMID" \
@@ -235,7 +251,39 @@ qm set "$VMID" \
   --ciupgrade 1 \
   >/dev/null
 
-rm -f "$GEHEIM"; ZU_RAEUMEN=""
+# Ubuntu-Cloud-Abbilder schalten die Passwortanmeldung über SSH ab
+# (/etc/ssh/sshd_config.d/60-cloudimg-settings.conf). Ohne Gegenmaßnahme gilt
+# das eben gesetzte Passwort nur an der seriellen Konsole -- wer sich per SSH
+# anmelden will, steht vor verschlossener Tür und weiss nicht warum.
+#
+# Proxmox kann das nicht selbst; dafür braucht es ein eigenes cloud-init-Stück.
+# Gibt es keinen Speicher für Schnipsel, wird wenigstens klar gesagt, was gilt.
+SCHNIPSEL_SPEICHER="$(
+  pvesm status --content snippets 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}'
+)"
+PASSWORT_SSH="nein"
+if [ -n "$SCHNIPSEL_SPEICHER" ]; then
+  SCHNIPSEL_PFAD="$(pvesm path "${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VMID}.yaml" 2>/dev/null || true)"
+  if [ -n "$SCHNIPSEL_PFAD" ]; then
+    mkdir -p "$(dirname "$SCHNIPSEL_PFAD")"
+    cat > "$SCHNIPSEL_PFAD" <<'SCHNIPSEL'
+#cloud-config
+ssh_pwauth: true
+SCHNIPSEL
+    if qm set "$VMID" --cicustom "vendor=${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VMID}.yaml" >/dev/null 2>&1; then
+      PASSWORT_SSH="ja"
+      gut "Anmeldung per Passwort über SSH eingeschaltet"
+    else
+      rm -f "$SCHNIPSEL_PFAD"
+    fi
+  fi
+fi
+if [ "$PASSWORT_SSH" = "nein" ]; then
+  warnen "Kein Speicher für cloud-init-Schnipsel gefunden."
+  warnen "Das Passwort gilt deshalb nur an der Konsole, nicht über SSH."
+fi
+
+rm -f "$GEHEIM"
 unset PASSWORT
 
 if [ -n "$SSH_SCHLUESSEL" ]; then
@@ -268,6 +316,14 @@ sagen "  (der QEMU-Gastdienst meldet sie), oder hier:"
 sagen ""
 sagen "      qm guest cmd $VMID network-get-interfaces"
 sagen ""
-sagen "  Anmelden:  ssh ${BENUTZER}@<adresse>"
+if [ "$PASSWORT_SSH" = "ja" ]; then
+  sagen "  Anmelden:  ssh ${BENUTZER}@<adresse>   (Schlüssel oder Passwort)"
+else
+  sagen "  Anmelden:  ssh ${BENUTZER}@<adresse>   (nur mit Schlüssel)"
+  sagen ""
+  sagen "  Das Passwort gilt nur an der Konsole. Für Passwort über SSH dort einmal:"
+  sagen "      sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' \\"
+  sagen "          /etc/ssh/sshd_config.d/*.conf && sudo systemctl restart ssh"
+fi
 sagen "  Konsole:   qm terminal $VMID     (mit Strg+O verlassen)"
 sagen ""

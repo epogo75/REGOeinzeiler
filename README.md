@@ -26,6 +26,23 @@ selbst vor.
 Benutzer `rego` (änderbar), QEMU-Gastdienst an, serieller Konsole. Anmelden geht per SSH oder
 über `qm terminal <kennung>`.
 
+### Wenn SSH „Permission denied (publickey)" sagt
+
+Ubuntu-Cloud-Abbilder schalten die **Passwortanmeldung über SSH ab Werk ab**
+(`/etc/ssh/sshd_config.d/60-cloudimg-settings.conf`). Ein gesetztes Passwort gilt dann nur an der
+Konsole. Das Skript schaltet die Passwortanmeldung ein, wenn auf dem Wirt ein Speicher für
+cloud-init-Schnipsel bereitsteht — sonst sagt es beim Beenden, dass es das nicht konnte.
+
+Nachträglich einschalten, an der Konsole (`qm terminal <kennung>`):
+
+```bash
+sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/*.conf
+sudo systemctl restart ssh
+```
+
+Schlüssel sind der bessere Weg: Das Skript fragt beim Anlegen nach weiteren öffentlichen
+Schlüsseln, damit nicht nur der Wirt hineinkommt, sondern auch das Notebook.
+
 ### Entscheidungen, die das Skript trifft
 
 **Cloud-Abbild statt ISO-Installation.** Das Abbild ist fertig eingerichtet und startet in etwa
