@@ -30,10 +30,11 @@ command -v docker >/dev/null 2>&1 || ende "Docker fehlt."
 
 # Welche Ausgabe gerade läuft, für den Fall, dass zurückgegangen werden muss.
 ALT="$(docker inspect --format '{{.Image}}' regocd 2>/dev/null || true)"
-# Der Port steht in der Einstellungsdatei als "aussen:innen". Innen ist immer
-# 8080 -- darauf horcht der Dienst im Container, das ist im Abbild festgelegt.
-# Gesucht wird also die Zahl davor.
-PORT="$(sed -n 's/.*"\([0-9]\+\):8080".*/\1/p' "$EINSTELLUNG" | head -1)"
+# Der Port steht als Einstellung in der Datei (REGOCD_PORT). Ältere
+# Einrichtungen nutzten noch eine Port-Abbildung "aussen:8080" -- beides wird
+# gelesen, damit ein Update nicht an der eigenen Vorgeschichte scheitert.
+PORT="$(sed -n 's/.*REGOCD_PORT: *"\?\([0-9]\+\).*/\1/p' "$EINSTELLUNG" | head -1)"
+[ -z "$PORT" ] && PORT="$(sed -n 's/.*"\([0-9]\+\):8080".*/\1/p' "$EINSTELLUNG" | head -1)"
 PORT="${PORT:-8090}"
 
 VORHER="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/version" 2>/dev/null \

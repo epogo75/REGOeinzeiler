@@ -156,17 +156,23 @@ gut "geholt"
 
 schritt "Container einrichten"
 mkdir -p /etc/regocd
+# Das Netz des Wirts, nicht das eigene: Die Player im Netz werden über SSDP
+# gesucht, und das ist Multicast. Aus einem Bridge-Netz kommt es nicht heraus
+# beziehungsweise die Antworten nicht hinein -- der Container fände dann
+# **keinen einzigen** Player, während alles andere tadellos läuft.
+# Nachgemessen: Bridge 0 Player, Wirtsnetz 5.
+#
+# Damit entfällt die Port-Zuordnung: Der Dienst horcht direkt auf dem Wirt,
+# und der Port kommt als Einstellung statt als Abbildung.
 cat > /etc/regocd/docker-compose.yml <<COMPOSE
 services:
   regocd:
     image: ${REGOCD_REGISTRY}/regocd:${REGOCD_MARKE}
     container_name: regocd
     restart: unless-stopped
-    ports:
-      # Links der Port nach aussen (frei wählbar), rechts der im Container.
-      # Der innere ist immer 8080: Darauf horcht der Dienst, so steht es im
-      # Abbild -- er darf hier nicht mitgeändert werden.
-      - "${REGOCD_PORT}:8080"
+    network_mode: host
+    environment:
+      REGOCD_PORT: "${REGOCD_PORT}"
     volumes:
       - ${REGOCD_DATENBANK}:/data
       - ${REGOCD_ARCHIV}:/musik

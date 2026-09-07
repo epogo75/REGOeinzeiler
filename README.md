@@ -121,6 +121,13 @@ Aktualisieren später:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-update.sh)"
 ```
 
+**Der Container läuft im Netz des Wirts** (`network_mode: host`). Das ist kein Versehen: Die
+Player im Netz werden über SSDP gesucht, und das ist Multicast — aus einem Bridge-Netz kommt es
+nicht heraus. Nachgemessen: im Bridge-Netz **kein einziger** Player, im Wirtsnetz alle fünf.
+Rippen, Bibliothek und Oberfläche funktionieren in beiden Fällen, deshalb fällt es erst auf,
+wenn man abspielen will. Weil damit die Port-Zuordnung entfällt, kommt der Port als Einstellung
+(`REGOCD_PORT`) statt als Abbildung.
+
 Das Update tauscht **nur das Abbild**. Datenbank, Archiv und Sicherung liegen ausserhalb des
 Containers und bleiben unangetastet — das Skript zeigt vor dem Tausch, um welche Verzeichnisse
 es geht. Antwortet die neue Ausgabe nicht, wird die vorherige wieder gestartet, und zwar über
