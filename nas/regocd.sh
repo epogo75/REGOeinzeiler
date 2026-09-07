@@ -59,6 +59,10 @@ frage "Ausgabe (latest oder z. B. b45)" "latest" REGOCD_MARKE
 # das Nachdenken, unter welcher Adresse man gerade sucht.
 frage "Port für die Oberfläche" "8090" REGOCD_PORT
 frage "CD-Laufwerk" "/dev/sr0" REGOCD_LAUFWERK
+# Steht in der Seitenspalte. Zwei gleich aussehende Instanzen im selben Netz
+# sind sonst kaum auseinanderzuhalten -- man rippt auf der einen und sucht das
+# Album auf der anderen.
+frage "Name dieser Instanz (steht in der Oberfläche)" "NAS" REGOCD_STELLE
 
 # Die Einhängepunkte einzeln, nicht unter einer Wurzel: Auf einem NAS liegen
 # sie selten beieinander. Das CD-Archiv gehört auf den grossen Speicherpool,
@@ -173,6 +177,7 @@ services:
     network_mode: host
     environment:
       REGOCD_PORT: "${REGOCD_PORT}"
+      REGOCD_STELLE: "${REGOCD_STELLE}"
     volumes:
       - ${REGOCD_DATENBANK}:/data
       - ${REGOCD_ARCHIV}:/musik
@@ -222,6 +227,7 @@ sagen "  Datenbank    ${REGOCD_DATENBANK}"
 sagen "  Sicherung    ${REGOCD_SICHERUNG}"
 sagen "  Arbeit       ${REGOCD_ARBEIT}"
 sagen "  Laufwerk     ${LAUFWERK:-keines} (meldet: ${ZUSTAND:-unbekannt})"
+sagen "  Instanz      ${REGOCD_STELLE}"
 sagen "  Einstellung  /etc/regocd/docker-compose.yml"
 sagen ""
 sagen "  Neue Ausgabe holen:"

@@ -60,6 +60,20 @@ grep -oE '/[^ ]+:/(data|musik|arbeit|sicherung)' "$EINSTELLUNG" 2>/dev/null \
         printf "      %-11s %s\n", name, $1 }' || true
 sagen ""
 
+# Nachrüsten, was in älteren Einrichtungen fehlt: Der Name der Instanz steht
+# seit Build 48 in der Seitenspalte -- ohne ihn sähe das NAS aus wie die
+# Entwicklungsmaschine, und genau diese Verwechslung soll er verhindern.
+if ! grep -q "REGOCD_STELLE" "$EINSTELLUNG"; then
+  schritt "Name der Instanz nachtragen"
+  NAME="${REGOCD_STELLE:-NAS}"
+  if grep -q "REGOCD_PORT" "$EINSTELLUNG"; then
+    sed -i "/REGOCD_PORT/a\      REGOCD_STELLE: \"${NAME}\"" "$EINSTELLUNG"
+    gut "als \"${NAME}\" eingetragen (mit REGOCD_STELLE=... änderbar)"
+  else
+    warnen "Kein Platz für den Namen gefunden — bitte von Hand in $EINSTELLUNG."
+  fi
+fi
+
 schritt "Neues Abbild holen"
 # Am Rückgabewert, nicht an der Ausgabe: Docker formuliert je nach Ausgabe
 # anders, und eine Warnung, die bei jedem geglückten Lauf erscheint, gewöhnt
