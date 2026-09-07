@@ -93,7 +93,7 @@ sudo env REGOCD_REGISTRY=192.168.1.43:5000 \
          REGOCD_ARCHIV=/volume2/musik \
          REGOCD_DATENBANK=/volume1/regocd/daten \
          REGOCD_SICHERUNG=/mnt/usb-platte \
-         REGOCD_PORT=8080 \
+         REGOCD_PORT=8090 \
          bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd.sh)"
 ```
 

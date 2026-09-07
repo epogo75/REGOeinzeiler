@@ -55,7 +55,9 @@ sagen ""
 
 frage "Registry (Rechner:Port)" "192.168.1.43:5000" REGOCD_REGISTRY
 frage "Ausgabe (latest oder z. B. b45)" "latest" REGOCD_MARKE
-frage "Port für die Oberfläche" "8080" REGOCD_PORT
+# 8090 wie bei der Entwicklungsinstanz -- ein Port für alle Stellen erspart
+# das Nachdenken, unter welcher Adresse man gerade sucht.
+frage "Port für die Oberfläche" "8090" REGOCD_PORT
 frage "CD-Laufwerk" "/dev/sr0" REGOCD_LAUFWERK
 
 # Die Einhängepunkte einzeln, nicht unter einer Wurzel: Auf einem NAS liegen
