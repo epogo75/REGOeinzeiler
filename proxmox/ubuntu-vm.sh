@@ -53,9 +53,25 @@ command -v curl >/dev/null 2>&1 || ende "curl fehlt."
 
 # ------------------------------------------------------------------- Abfragen
 
+# frage <Text> <Vorgabe> <Variablenname>
+#
+# Jede Frage lässt sich vorab beantworten: Der Name der Zielvariablen ist
+# zugleich die Umgebungsvariable. So bleibt das Skript unverändert nutzbar --
+# wer es über `curl` aufruft, kann seine Werte trotzdem setzen, ohne es
+# bearbeiten zu müssen. Mit VM_STILL=ja wird gar nicht gefragt.
 frage() {
-  # frage <Text> <Vorgabe> <Variablenname>
   local text="$1" vorgabe="$2" ziel="$3" eingabe=""
+  local gesetzt="${!ziel-}"
+
+  if [ -n "$gesetzt" ]; then
+    sagen "  ${text}: ${gesetzt}"
+    return
+  fi
+  if [ "${VM_STILL:-}" = "ja" ]; then
+    printf -v "$ziel" '%s' "$vorgabe"
+    sagen "  ${text}: ${vorgabe}"
+    return
+  fi
   read -r -p "  ${text} [${vorgabe}]: " eingabe </dev/tty || true
   printf -v "$ziel" '%s' "${eingabe:-$vorgabe}"
 }
@@ -78,34 +94,39 @@ schritt "Ubuntu-Server-VM auf Proxmox anlegen"
 sagen ""
 
 VORGABE_ID="$(naechste_freie_id)"
-frage "VM-Kennung (ID)" "$VORGABE_ID" VMID
-[[ "$VMID" =~ ^[0-9]+$ ]] || ende "Die Kennung muss eine Zahl sein."
-[ "$VMID" -ge 100 ] || ende "Proxmox vergibt Kennungen ab 100."
-if qm status "$VMID" >/dev/null 2>&1 || pct status "$VMID" >/dev/null 2>&1; then
-  ende "Kennung $VMID ist schon vergeben."
+frage "VM-Kennung (ID)" "$VORGABE_ID" VM_ID
+[[ "$VM_ID" =~ ^[0-9]+$ ]] || ende "Die Kennung muss eine Zahl sein."
+[ "$VM_ID" -ge 100 ] || ende "Proxmox vergibt Kennungen ab 100."
+if qm status "$VM_ID" >/dev/null 2>&1 || pct status "$VM_ID" >/dev/null 2>&1; then
+  ende "Kennung $VM_ID ist schon vergeben."
 fi
 
-frage "Name der VM" "ubuntu-$VMID" VMNAME
-frage "Arbeitsspeicher in MB" "4096" RAM
-frage "Prozessorkerne" "2" KERNE
-frage "Festplatte in GB" "32" PLATTE
-frage "Benutzername" "rego" BENUTZER
+frage "Name der VM" "ubuntu-$VM_ID" VM_NAME
+frage "Arbeitsspeicher in MB" "4096" VM_RAM
+frage "Prozessorkerne" "2" VM_KERNE
+frage "Festplatte in GB" "32" VM_PLATTE
+frage "Benutzername" "rego" VM_BENUTZER
 
 # Speicherort: der erste, der Abbilder aufnehmen kann.
 VORGABE_SPEICHER="$(
   pvesm status --content images 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}'
 )"
-frage "Speicherort" "${VORGABE_SPEICHER:-local-lvm}" SPEICHER
-frage "Netzwerkbrücke" "vmbr0" BRUECKE
+frage "Speicherort" "${VORGABE_SPEICHER:-local-lvm}" VM_SPEICHER
+frage "Netzwerkbrücke" "vmbr0" VM_BRUECKE
 
 # Passwort verdeckt und zweimal -- ein Tippfehler fiele sonst erst beim
 # Anmelden auf, wenn die VM schon läuft.
-while :; do
-  read -r -s -p "  Passwort für ${BENUTZER}: " PASSWORT </dev/tty; echo
+if [ -n "${VM_PASSWORT:-}" ]; then
+  PASSWORT="$VM_PASSWORT"
+  sagen "  Passwort für ${VM_BENUTZER}: (aus VM_PASSWORT übernommen)"
+fi
+while [ -z "${PASSWORT:-}" ]; do
+  read -r -s -p "  Passwort für ${VM_BENUTZER}: " PASSWORT </dev/tty; echo
   [ -n "$PASSWORT" ] || { warnen "Das Passwort darf nicht leer sein."; continue; }
   read -r -s -p "  Passwort wiederholen: " PASSWORT2 </dev/tty; echo
   [ "$PASSWORT" = "$PASSWORT2" ] && break
   warnen "Die beiden Eingaben stimmen nicht überein."
+  PASSWORT=""
 done
 unset PASSWORT2
 
@@ -199,39 +220,39 @@ fi
 
 # ------------------------------------------------------------------ Anlegen
 
-schritt "VM $VMID anlegen"
+schritt "VM $VM_ID anlegen"
 
-qm create "$VMID" \
-  --name "$VMNAME" \
-  --memory "$RAM" \
-  --cores "$KERNE" \
+qm create "$VM_ID" \
+  --name "$VM_NAME" \
+  --memory "$VM_RAM" \
+  --cores "$VM_KERNE" \
   --cpu host \
-  --net0 "virtio,bridge=${BRUECKE}" \
+  --net0 "virtio,bridge=${VM_BRUECKE}" \
   --scsihw virtio-scsi-single \
   --ostype l26 \
   --agent enabled=1 \
   --serial0 socket --vga serial0 \
   >/dev/null
-VM_ANGELEGT="$VMID"
+VM_ANGELEGT="$VM_ID"
 
 # Ab hier räumt der Abbruchpfad die VM wieder weg.
 schritt "Abbild einspielen"
-qm importdisk "$VMID" "$DATEI" "$SPEICHER" >/dev/null 2>&1 \
+qm importdisk "$VM_ID" "$DATEI" "$VM_SPEICHER" >/dev/null 2>&1 \
   || ende "Das Abbild liess sich nicht nach '$SPEICHER' einspielen."
 
 # Wie die eingespielte Platte heisst, hängt vom Speichertyp ab -- deshalb
 # nicht raten, sondern aus der Beschreibung lesen.
-PLATTENNAME="$(qm config "$VMID" | awk -F': ' '/^unused0:/ {print $2; exit}')"
+PLATTENNAME="$(qm config "$VM_ID" | awk -F': ' '/^unused0:/ {print $2; exit}')"
 [ -n "$PLATTENNAME" ] || ende "Die eingespielte Platte ist nicht auffindbar."
 
-qm set "$VMID" \
+qm set "$VM_ID" \
   --scsi0 "${PLATTENNAME},discard=on,ssd=1" \
   --boot order=scsi0 \
-  --ide2 "${SPEICHER}:cloudinit" \
+  --ide2 "${VM_SPEICHER}:cloudinit" \
   >/dev/null
 
-qm disk resize "$VMID" scsi0 "${PLATTE}G" >/dev/null 2>&1 \
-  || warnen "Die Platte liess sich nicht auf ${PLATTE} GB vergrössern."
+qm disk resize "$VM_ID" scsi0 "${VM_PLATTE}G" >/dev/null 2>&1 \
+  || warnen "Die Platte liess sich nicht auf ${VM_PLATTE} GB vergrössern."
 
 # --------------------------------------------------------------- cloud-init
 
@@ -244,8 +265,8 @@ GEHEIM="$(mktemp)"
 chmod 600 "$GEHEIM"
 printf '%s' "$PASSWORT" > "$GEHEIM"
 
-qm set "$VMID" \
-  --ciuser "$BENUTZER" \
+qm set "$VM_ID" \
+  --ciuser "$VM_BENUTZER" \
   --cipassword "$(cat "$GEHEIM")" \
   --ipconfig0 ip=dhcp \
   --ciupgrade 1 \
@@ -263,7 +284,7 @@ SCHNIPSEL_SPEICHER="$(
 )"
 PASSWORT_SSH="nein"
 if [ -n "$SCHNIPSEL_SPEICHER" ]; then
-  SCHNIPSEL_PFAD="$(pvesm path "${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VMID}.yaml" 2>/dev/null || true)"
+  SCHNIPSEL_PFAD="$(pvesm path "${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VM_ID}.yaml" 2>/dev/null || true)"
   if [ -n "$SCHNIPSEL_PFAD" ]; then
     mkdir -p "$(dirname "$SCHNIPSEL_PFAD")"
     cat > "$SCHNIPSEL_PFAD" <<'SCHNIPSEL'
@@ -275,7 +296,7 @@ runcmd:
   # herunterfahren -- beides fällt erst auf, wenn man es braucht.
   - [ systemctl, enable, --now, qemu-guest-agent ]
 SCHNIPSEL
-    if qm set "$VMID" --cicustom "vendor=${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VMID}.yaml" >/dev/null 2>&1; then
+    if qm set "$VM_ID" --cicustom "vendor=${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VM_ID}.yaml" >/dev/null 2>&1; then
       PASSWORT_SSH="ja"
       gut "Anmeldung per Passwort über SSH eingeschaltet"
     else
@@ -294,26 +315,26 @@ rm -f "$GEHEIM"
 unset PASSWORT
 
 if [ -n "$SSH_SCHLUESSEL" ]; then
-  if qm set "$VMID" --sshkeys "$SSH_SCHLUESSEL" >/dev/null 2>&1; then
+  if qm set "$VM_ID" --sshkeys "$SSH_SCHLUESSEL" >/dev/null 2>&1; then
     gut "SSH-Schlüssel übernommen"
   else
     warnen "Der SSH-Schlüssel liess sich nicht übernehmen."
   fi
 fi
 
-qm set "$VMID" --description "Ubuntu ${VERSION} · angelegt am $(date '+%d.%m.%Y') mit REGOeinzeiler" >/dev/null
+qm set "$VM_ID" --description "Ubuntu ${VERSION} · angelegt am $(date '+%d.%m.%Y') mit REGOeinzeiler" >/dev/null
 
 # ------------------------------------------------------------------- Starten
 
 schritt "VM starten"
-qm start "$VMID" >/dev/null || ende "Die VM liess sich nicht starten."
+qm start "$VM_ID" >/dev/null || ende "Die VM liess sich nicht starten."
 VM_ANGELEGT=""   # ab hier ist sie fertig und wird bei Fehlern nicht mehr entfernt
 gut "Läuft"
 
 sagen ""
 schritt "Fertig"
-sagen "  Kennung   $VMID"
-sagen "  Name      $VMNAME"
+sagen "  Kennung   $VM_ID"
+sagen "  Name      $VM_NAME"
 sagen "  System    Ubuntu $VERSION LTS Server (ohne Oberfläche)"
 sagen "  Benutzer  $BENUTZER"
 sagen "  Netz      DHCP über $BRUECKE"
@@ -321,16 +342,16 @@ sagen ""
 sagen '  Die Adresse steht nach etwa einer Minute im Reiter "Zusammenfassung"' 
 sagen "  (der QEMU-Gastdienst meldet sie), oder hier:"
 sagen ""
-sagen "      qm guest cmd $VMID network-get-interfaces"
+sagen "      qm guest cmd $VM_ID network-get-interfaces"
 sagen ""
 if [ "$PASSWORT_SSH" = "ja" ]; then
-  sagen "  Anmelden:  ssh ${BENUTZER}@<adresse>   (Schlüssel oder Passwort)"
+  sagen "  Anmelden:  ssh ${VM_BENUTZER}@<adresse>   (Schlüssel oder Passwort)"
 else
-  sagen "  Anmelden:  ssh ${BENUTZER}@<adresse>   (nur mit Schlüssel)"
+  sagen "  Anmelden:  ssh ${VM_BENUTZER}@<adresse>   (nur mit Schlüssel)"
   sagen ""
   sagen "  Das Passwort gilt nur an der Konsole. Für Passwort über SSH dort einmal:"
   sagen "      sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' \\"
   sagen "          /etc/ssh/sshd_config.d/*.conf && sudo systemctl restart ssh"
 fi
-sagen "  Konsole:   qm terminal $VMID     (mit Strg+O verlassen)"
+sagen "  Konsole:   qm terminal $VM_ID     (mit Strg+O verlassen)"
 sagen ""

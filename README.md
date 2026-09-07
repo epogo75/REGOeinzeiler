@@ -83,6 +83,38 @@ Einhängepunkten **einzeln**: CD-Archiv, Datenbank, Sicherung, Arbeitsordner. Au
 liegen die selten beieinander: Das Archiv gehört auf den grossen Speicherpool, die Sicherung
 auf eine externe Platte, die auch mal abgezogen wird.
 
+### Ohne Nachfragen, mit eigenen Werten
+
+Jede Frage lässt sich vorab beantworten — der Aufruf bleibt derselbe, das Skript muss nicht
+bearbeitet werden:
+
+```bash
+sudo env REGOCD_REGISTRY=192.168.1.43:5000 \
+         REGOCD_ARCHIV=/volume2/musik \
+         REGOCD_DATENBANK=/volume1/regocd/daten \
+         REGOCD_SICHERUNG=/mnt/usb-platte \
+         REGOCD_PORT=8080 \
+         bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd.sh)"
+```
+
+| Variable | wofür |
+|---|---|
+| `REGOCD_REGISTRY` | Rechner:Port der Registry |
+| `REGOCD_MARKE` | `latest` oder eine bestimmte Ausgabe (`b46`) |
+| `REGOCD_PORT` | Port der Oberfläche |
+| `REGOCD_LAUFWERK` | CD-Laufwerk |
+| `REGOCD_WURZEL` | Grundverzeichnis, Vorgabe für die vier folgenden |
+| `REGOCD_ARCHIV` | CD-Archiv (FLAC-Dateien) |
+| `REGOCD_DATENBANK` | Datenbank und Cover |
+| `REGOCD_SICHERUNG` | Sicherungsplatte |
+| `REGOCD_ARBEIT` | Arbeitsordner |
+
+Was gesetzt ist, wird nicht gefragt. `REGOCD_STILL=ja` nimmt für alles Übrige die Vorgabe und
+fragt gar nichts — dann läuft das Skript ohne Zutun durch.
+
+Beim VM-Skript geht dasselbe mit `VM_ID`, `VM_NAME`, `VM_RAM`, `VM_KERNE`, `VM_PLATTE`,
+`VM_BENUTZER`, `VM_SPEICHER`, `VM_BRUECKE`, `VM_PASSWORT` und `VM_STILL=ja`.
+
 Aktualisieren später:
 
 ```bash
