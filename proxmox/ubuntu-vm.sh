@@ -269,6 +269,11 @@ if [ -n "$SCHNIPSEL_SPEICHER" ]; then
     cat > "$SCHNIPSEL_PFAD" <<'SCHNIPSEL'
 #cloud-config
 ssh_pwauth: true
+runcmd:
+  # Der Gastdienst ist im Abbild enthalten, startet aber nicht von selbst.
+  # Ohne ihn zeigt Proxmox keine Adresse an und kann die VM nicht sauber
+  # herunterfahren -- beides fällt erst auf, wenn man es braucht.
+  - [ systemctl, enable, --now, qemu-guest-agent ]
 SCHNIPSEL
     if qm set "$VMID" --cicustom "vendor=${SCHNIPSEL_SPEICHER}:snippets/regoeinzeiler-${VMID}.yaml" >/dev/null 2>&1; then
       PASSWORT_SSH="ja"
@@ -280,7 +285,9 @@ SCHNIPSEL
 fi
 if [ "$PASSWORT_SSH" = "nein" ]; then
   warnen "Kein Speicher für cloud-init-Schnipsel gefunden."
-  warnen "Das Passwort gilt deshalb nur an der Konsole, nicht über SSH."
+  warnen "Das Passwort gilt deshalb nur an der Konsole, nicht über SSH,"
+  warnen "und der QEMU-Gastdienst muss von Hand gestartet werden:"
+  warnen "    sudo systemctl enable --now qemu-guest-agent"
 fi
 
 rm -f "$GEHEIM"

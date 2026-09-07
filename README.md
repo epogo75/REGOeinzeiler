@@ -9,6 +9,8 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | Skript | Was es tut |
 |---|---|
 | [`proxmox/ubuntu-vm.sh`](proxmox/ubuntu-vm.sh) | Legt auf einem Proxmox-Wirt eine Ubuntu-Server-VM an |
+| [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
+| [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 
 ## Ubuntu-Server-VM auf Proxmox
 
@@ -67,6 +69,39 @@ statt als Leiche in der Liste zu stehen.
 Proxmox VE (getestet ab 8), `root`-Rechte auf dem Wirt, ein Netzzugang zu
 `cloud-images.ubuntu.com`. Das Abbild wird unter `/var/lib/vz/template/cache/` abgelegt und beim
 nächsten Lauf wiederverwendet.
+
+## REGOcd auf einem NAS
+
+Auf dem **NAS** als `root` (oder mit `sudo`):
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd.sh)"
+```
+
+Gefragt wird nach der Registry, dem Port, dem CD-Laufwerk — und nach den
+Einhängepunkten **einzeln**: CD-Archiv, Datenbank, Sicherung, Arbeitsordner. Auf einem NAS
+liegen die selten beieinander: Das Archiv gehört auf den grossen Speicherpool, die Sicherung
+auf eine externe Platte, die auch mal abgezogen wird.
+
+Aktualisieren später:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-update.sh)"
+```
+
+Das Update tauscht **nur das Abbild**. Datenbank, Archiv und Sicherung liegen ausserhalb des
+Containers und bleiben unangetastet — das Skript zeigt vor dem Tausch, um welche Verzeichnisse
+es geht. Antwortet die neue Ausgabe nicht, wird die vorherige wieder gestartet, und zwar über
+dieselbe Einstellungsdatei, damit die Verzeichnisse mitkommen.
+
+**Warum aus einer eigenen Registry?** Der Bau braucht Node, Python und einige Minuten. Das
+Abbild ist fertig, kommt in Sekunden, und ist nachweislich dasselbe, das anderswo geprüft
+wurde. Eine Registry aufsetzen geht in einer Zeile:
+
+```bash
+docker run -d --name registry --restart unless-stopped \
+  -p 5000:5000 -v /srv/registry:/var/lib/registry registry:2
+```
 
 ## Vor dem Ausführen hineinsehen
 
