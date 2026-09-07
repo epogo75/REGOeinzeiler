@@ -163,6 +163,9 @@ services:
     container_name: regocd
     restart: unless-stopped
     ports:
+      # Links der Port nach aussen (frei wählbar), rechts der im Container.
+      # Der innere ist immer 8080: Darauf horcht der Dienst, so steht es im
+      # Abbild -- er darf hier nicht mitgeändert werden.
       - "${REGOCD_PORT}:8080"
     volumes:
       - ${REGOCD_DATENBANK}:/data
