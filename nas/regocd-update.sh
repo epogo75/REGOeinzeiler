@@ -74,6 +74,33 @@ if ! grep -q "REGOCD_STELLE" "$EINSTELLUNG"; then
   fi
 fi
 
+# Ebenso nachrüsten: Woher die Abbilder kommen. Der Dienst fragt damit von
+# sich aus, ob eine neuere Ausgabe bereitliegt, und sagt es im Über-Dialog --
+# er holt und startet nichts. Ohne diesen Eintrag bliebe der Hinweis stumm,
+# und genau daran lag es, dass das NAS wochenlang auf einer alten Baunummer
+# stand, ohne dass es jemandem auffiel. Die Adresse steht schon in der Datei:
+# in der Zeile mit dem Abbild.
+if ! grep -q "REGOCD_REGISTRY" "$EINSTELLUNG"; then
+  ADRESSE="$(sed -n 's|^ *image: *\([^/]*\)/regocd:.*|\1|p' "$EINSTELLUNG" | head -1)"
+  if [ -n "$ADRESSE" ] && grep -q "REGOCD_PORT" "$EINSTELLUNG"; then
+    schritt "Registry-Adresse nachtragen"
+    sed -i "/REGOCD_PORT/a\      REGOCD_REGISTRY: \"${ADRESSE}\"" "$EINSTELLUNG"
+    gut "${ADRESSE} eingetragen — künftige Ausgaben melden sich von selbst"
+  fi
+fi
+
+# Und die Zeitzone. Ohne sie läuft der Behälter in UTC -- der Nachtdienst
+# sichert dann um 03:00 UTC, was im Sommer 05:00 Ortszeit ist. Beim ersten
+# Probelauf fiel die Sicherung dadurch mitten in den Abend.
+if ! grep -q "TZ:" "$EINSTELLUNG"; then
+  ZONE="${REGOCD_ZEITZONE:-$(cat /etc/timezone 2>/dev/null || echo Europe/Berlin)}"
+  if grep -q "REGOCD_PORT" "$EINSTELLUNG"; then
+    schritt "Zeitzone nachtragen"
+    sed -i "/REGOCD_PORT/a\      TZ: \"${ZONE}\"" "$EINSTELLUNG"
+    gut "${ZONE} eingetragen (mit REGOCD_ZEITZONE=... änderbar)"
+  fi
+fi
+
 schritt "Neues Abbild holen"
 # Am Rückgabewert, nicht an der Ausgabe: Docker formuliert je nach Ausgabe
 # anders, und eine Warnung, die bei jedem geglückten Lauf erscheint, gewöhnt

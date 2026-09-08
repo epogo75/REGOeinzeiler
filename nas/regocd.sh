@@ -63,6 +63,10 @@ frage "CD-Laufwerk" "/dev/sr0" REGOCD_LAUFWERK
 # sind sonst kaum auseinanderzuhalten -- man rippt auf der einen und sucht das
 # Album auf der anderen.
 frage "Name dieser Instanz (steht in der Oberfläche)" "NAS" REGOCD_STELLE
+# Ohne Zeitzone läuft ein Container in UTC. Der Dienst sichert nachts um 03:00
+# -- nach *seiner* Uhr. Steht sie auf UTC, rödelt die Platte im Sommer um
+# 05:00 Ortszeit los. Deshalb wird sie gefragt und nicht geraten.
+frage "Zeitzone" "Europe/Berlin" REGOCD_ZEITZONE
 
 # Die Einhängepunkte einzeln, nicht unter einer Wurzel: Auf einem NAS liegen
 # sie selten beieinander. Das CD-Archiv gehört auf den grossen Speicherpool,
@@ -178,6 +182,12 @@ services:
     environment:
       REGOCD_PORT: "${REGOCD_PORT}"
       REGOCD_STELLE: "${REGOCD_STELLE}"
+      # Nur zum Fragen, ob eine neuere Ausgabe bereitliegt -- der Dienst holt
+      # und startet nichts von selbst. Ohne diesen Eintrag bliebe der Hinweis
+      # aus, und genau das war der Grund, warum der NAS wochenlang auf einer
+      # alten Baunummer stand, ohne dass es jemandem auffiel.
+      REGOCD_REGISTRY: "${REGOCD_REGISTRY}"
+      TZ: "${REGOCD_ZEITZONE}"
     volumes:
       - ${REGOCD_DATENBANK}:/data
       - ${REGOCD_ARCHIV}:/musik
