@@ -55,6 +55,21 @@ sagen ""
 
 frage "Registry (Rechner:Port)" "192.168.1.43:5000" DOCUMENTO_REGISTRY
 frage "Ausgabe (latest oder z. B. b3)" "latest" DOCUMENTO_MARKE
+
+# Der Postausgang ist freiwillig. Leer heisst: kein Mailversand, und die
+# Oberfläche sagt das offen, statt einen Knopf anzubieten, der scheitert.
+frage "Postausgang (SMTP-Rechner, leer = kein Versand)" "" DOCUMENTO_SMTP_RECHNER
+if [ -n "$DOCUMENTO_SMTP_RECHNER" ]; then
+  frage "SMTP-Port"                     "587" DOCUMENTO_SMTP_PORT
+  frage "SMTP-Benutzer (leer = keiner)" ""    DOCUMENTO_SMTP_BENUTZER
+  frage "SMTP-Passwort"                 ""    DOCUMENTO_SMTP_PASSWORT
+  frage "Absenderadresse"               ""    DOCUMENTO_SMTP_ABSENDER
+else
+  DOCUMENTO_SMTP_PORT="587"
+  DOCUMENTO_SMTP_BENUTZER=""
+  DOCUMENTO_SMTP_PASSWORT=""
+  DOCUMENTO_SMTP_ABSENDER=""
+fi
 frage "Port für die Oberfläche" "8091" DOCUMENTO_PORT
 # Steht in der Oberfläche. Zwei gleich aussehende Instanzen im selben Netz
 # sind sonst kaum auseinanderzuhalten -- man erfasst auf der einen und sucht
@@ -159,6 +174,16 @@ services:
       DOCUMENTO_STELLE: "${DOCUMENTO_STELLE}"
       DOCUMENTO_ADMIN_PASSWORT: "${DOCUMENTO_ADMIN_PASSWORT}"
       TZ: "${DOCUMENTO_ZEITZONE}"
+      # Postausgang für „Rapport senden". Bleibt er leer, ist das kein
+      # Fehler: documento bietet den Knopf dann gar nicht erst an und
+      # reicht stattdessen das PDF heraus. Wer ihn braucht, trägt hier den
+      # Hausrelay ein -- die Zugangsdaten stehen bewusst hier und nicht in
+      # der Datenbank, sonst lägen sie in jeder Sicherung.
+      DOCUMENTO_SMTP_RECHNER: "${DOCUMENTO_SMTP_RECHNER}"
+      DOCUMENTO_SMTP_PORT: "${DOCUMENTO_SMTP_PORT}"
+      DOCUMENTO_SMTP_BENUTZER: "${DOCUMENTO_SMTP_BENUTZER}"
+      DOCUMENTO_SMTP_PASSWORT: "${DOCUMENTO_SMTP_PASSWORT}"
+      DOCUMENTO_SMTP_ABSENDER: "${DOCUMENTO_SMTP_ABSENDER}"
     volumes:
       - ${DOCUMENTO_DATENBANK}:/data
       - ${DOCUMENTO_DOKUMENTE}:/dokumente
