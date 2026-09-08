@@ -59,6 +59,18 @@ grep -oE '/[^ ]+:/(data|dokumente|sicherung)' "$EINSTELLUNG" 2>/dev/null \
         printf "      %-11s %s\n", name, $1 }' || true
 sagen ""
 
+# Nach einem Rückrollen steht in der Datei eine nackte Abbildkennung
+# (sha256:…) statt einer Marke, und `pull` scheitert daran -- die Kennung gibt
+# es in keiner Registry. Die Einstellung von damals liegt als `.neu` daneben:
+# Sie kommt zurück, bevor irgendetwas geholt wird. Ohne diesen Schritt endet
+# jedes weitere Update mit „Registry nicht erreichbar", und die Registry ist
+# völlig in Ordnung.
+if grep -qE '^ *image: *sha256:' "$EINSTELLUNG" && [ -f "${EINSTELLUNG}.neu" ]; then
+  schritt "Nach dem letzten Rückrollen: Marke wiederherstellen"
+  mv "${EINSTELLUNG}.neu" "$EINSTELLUNG"
+  gut "$(sed -n 's/^ *image: *//p' "$EINSTELLUNG" | head -1)"
+fi
+
 schritt "Neues Abbild holen"
 # Am Rückgabewert, nicht an der Ausgabe: Docker formuliert je nach Ausgabe
 # anders, und eine Warnung, die bei jedem geglückten Lauf erscheint, gewöhnt
