@@ -11,6 +11,8 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | [`proxmox/ubuntu-vm.sh`](proxmox/ubuntu-vm.sh) | Legt auf einem Proxmox-Wirt eine Ubuntu-Server-VM an |
 | [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
 | [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
+| [`nas/documento.sh`](nas/documento.sh) | Richtet documento auf einem NAS ein (Stundenverwaltung, Abbild aus der eigenen Registry) |
+| [`nas/documento-update.sh`](nas/documento-update.sh) | Holt die neueste documento-Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 
 ## Ubuntu-Server-VM auf Proxmox
 
@@ -156,3 +158,25 @@ gehalten und kommentiert, damit das Lesen nicht länger dauert als das Ausführe
 ## Lizenz
 
 MIT — siehe [LICENSE](LICENSE).
+
+## documento auf einem NAS
+
+Auf dem **NAS** als `root` ausführen:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/documento.sh)"
+```
+
+Gefragt werden Registry, Port, Zeitzone, die drei Verzeichnisse (Datenbank,
+Dokumente, Sicherung) und das Anfangskennwort für den Benutzer `admin`. Jede
+Frage lässt sich vorab als Umgebungsvariable setzen; mit `DOCUMENTO_STILL=ja`
+wird gar nicht gefragt.
+
+Aktualisieren:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/documento-update.sh)"
+```
+
+Die Datenbank und die Dokumente liegen ausserhalb des Containers und bleiben
+beim Wechsel des Abbilds unangetastet.
