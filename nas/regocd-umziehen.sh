@@ -45,6 +45,23 @@ SOLL_SICHERUNG="${REGOCD_SICHERUNG:-/mnt/@usb/sdc1/regocd-sicherung}"
 
 ist_pfad() { grep -oE "/[^ ]+:$1\b" "$EINSTELLUNG" | head -1 | cut -d: -f1; }
 
+# **Wo lag es vorher?** Jedes Skript hier legt die alte Einstellung daneben,
+# bevor es sie ändert. Genau darin steht, wohin ein Einhängepunkt früher
+# zeigte -- und das ist die Spur zu den Dateien, wenn der Punkt schon auf das
+# neue Ziel zeigt, dort aber nichts liegt.
+frueher_pfad() {
+  local ziel="$1" datei
+  for datei in "${EINSTELLUNG}.vor-umzug" "${EINSTELLUNG}.vor-update" \
+               "${EINSTELLUNG}.vor-regocd"; do
+    [ -f "$datei" ] || continue
+    grep -oE "/[^ ]+:${ziel}\b" "$datei" | head -1 | cut -d: -f1
+    return
+  done
+}
+
+# Wie viele Dateien liegen in einem Ordner? Leer heisst hier: keine einzige.
+dateien_in() { find "$1" -type f 2>/dev/null | wc -l | tr -d ' '; }
+
 # ------------------------------------------------------------- Was ansteht
 
 schritt "Was umzuziehen wäre"
@@ -52,6 +69,9 @@ ZIELE=("/musik" "/data" "/arbeit" "/sicherung")
 SOLLS=("$SOLL_ARCHIV" "$SOLL_DATEN" "$SOLL_ARBEIT" "$SOLL_SICHERUNG")
 NAMEN=("CD-Archiv" "Datenbank" "Arbeit" "Sicherung")
 ANSTEHEND=()
+# Woher kopiert wird -- fast immer der eingehängte Ordner selbst; steht der
+# Punkt schon aufs Ziel und ist leer, der frühere.
+declare -A QUELLEN=()
 
 for i in "${!ZIELE[@]}"; do
   ist="$(ist_pfad "${ZIELE[$i]}")"
@@ -60,10 +80,26 @@ for i in "${!ZIELE[@]}"; do
   if [ -z "$ist" ]; then
     warnen "${name}: nichts auf ${ZIELE[$i]} eingehängt — bitte erst einrichten."
   elif [ "$ist" = "$soll" ]; then
-    gut "${name}: ${ist}"
+    # **Der Punkt stimmt -- liegt auch etwas darin?** Wer die Einrichtung
+    # noch einmal laufen lässt, hängt den neuen Ordner ein; die Dateien
+    # bleiben am alten Platz. Der Dienst sieht dann ein leeres Archiv und
+    # meldet jede Aufnahme als fehlend. Deshalb wird hier nicht nur der
+    # Pfad verglichen, sondern nachgesehen.
+    hier="$(dateien_in "$ist")"
+    vorher="$(frueher_pfad "${ZIELE[$i]}")"
+    dort=0
+    [ -n "$vorher" ] && [ "$vorher" != "$ist" ] && dort="$(dateien_in "$vorher")"
+    if [ "${hier:-0}" -eq 0 ] && [ "${dort:-0}" -gt 0 ]; then
+      warnen "${name}: ${ist} ist LEER — ${dort} Dateien liegen noch unter ${vorher}."
+      QUELLEN[$i]="$vorher"
+      ANSTEHEND+=("$i")
+    else
+      gut "${name}: ${ist}   (${hier} Dateien)"
+    fi
   else
-    anzahl="$(find "$ist" -type f 2>/dev/null | wc -l | tr -d ' ')"
+    anzahl="$(dateien_in "$ist")"
     sagen "      ${name}: ${ist}  →  ${soll}   (${anzahl} Dateien)"
+    QUELLEN[$i]="$ist"
     ANSTEHEND+=("$i")
   fi
 done
@@ -78,11 +114,11 @@ fi
 # zwei Platten -- das ist schlimmer als gar nicht anzufangen.
 sagen ""
 for i in "${ANSTEHEND[@]}"; do
-  ist="$(ist_pfad "${ZIELE[$i]}")"
+  quelle="${QUELLEN[$i]}"
   soll="${SOLLS[$i]}"
   mkdir -p "$soll" || ende "$soll liess sich nicht anlegen."
   [ -w "$soll" ] || ende "$soll ist nicht beschreibbar."
-  braucht="$(du -sk "$ist" 2>/dev/null | awk '{print $1}')"
+  braucht="$(du -sk "$quelle" 2>/dev/null | awk '{print $1}')"
   frei="$(df -Pk "$soll" | awk 'NR == 2 {print $4}')"
   sagen "  ${NAMEN[$i]}: $(( ${braucht:-0} / 1024 )) MB zu verschieben, $(( frei / 1024 )) MB frei"
   [ "${frei:-0}" -gt "${braucht:-0}" ] || ende "Auf dem Ziel von ${NAMEN[$i]} ist zu wenig Platz."
@@ -105,27 +141,34 @@ cp "$EINSTELLUNG" "${EINSTELLUNG}.vor-umzug"
 # Kopiert wird, gelöscht wird nicht: Bricht es ab, liegt alles noch am alten
 # Platz. Weggeräumt wird am Ende vom Menschen, nicht vom Skript.
 for i in "${ANSTEHEND[@]}"; do
+  quelle="${QUELLEN[$i]}"
   ist="$(ist_pfad "${ZIELE[$i]}")"
   soll="${SOLLS[$i]}"
   name="${NAMEN[$i]}"
 
   schritt "${name} kopieren"
-  vorher="$(find "$ist" -type f | wc -l | tr -d ' ')"
+  sagen "      von ${quelle}"
+  sagen "      nach ${soll}"
+  vorher="$(dateien_in "$quelle")"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --info=progress2 "$ist"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
+    rsync -a --info=progress2 "$quelle"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
   else
-    cp -a "$ist"/. "$soll"/ 2>/dev/null || ende "${name}: Kopieren gescheitert."
+    cp -a "$quelle"/. "$soll"/ 2>/dev/null || ende "${name}: Kopieren gescheitert."
   fi
-  nachher="$(find "$soll" -type f | wc -l | tr -d ' ')"
+  nachher="$(dateien_in "$soll")"
   [ "$nachher" -ge "$vorher" ] \
     || ende "${name}: am Ziel liegen ${nachher} Dateien, erwartet waren ${vorher}."
   gut "${nachher} Dateien unter ${soll}"
 
-  # Mit | als Trenner, weil im Pfad Schrägstriche stehen.
-  sed -i "s|${ist}:${ZIELE[$i]}|${soll}:${ZIELE[$i]}|" "$EINSTELLUNG"
-  grep -q "${soll}:${ZIELE[$i]}" "$EINSTELLUNG" \
-    || ende "${name}: Die Zeile liess sich nicht ändern — siehe $EINSTELLUNG."
-  gut "${soll} → ${ZIELE[$i]}"
+  # Zeigt der Einhängepunkt schon aufs Ziel, ist nichts zu ändern -- dann
+  # fehlten nur die Dateien.
+  if [ "$ist" != "$soll" ]; then
+    # Mit | als Trenner, weil im Pfad Schrägstriche stehen.
+    sed -i "s|${ist}:${ZIELE[$i]}|${soll}:${ZIELE[$i]}|" "$EINSTELLUNG"
+    grep -q "${soll}:${ZIELE[$i]}" "$EINSTELLUNG" \
+      || ende "${name}: Die Zeile liess sich nicht ändern — siehe $EINSTELLUNG."
+    gut "${soll} → ${ZIELE[$i]}"
+  fi
 done
 
 # -------------------------------------------------------------------- Starten
