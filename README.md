@@ -12,6 +12,7 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
 | [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 | [`nas/regocd-pruefen.sh`](nas/regocd-pruefen.sh) | Sieht nach, wo die Aufnahmen wirklich liegen — ändert nichts |
+| [`nas/regocd-umziehen.sh`](nas/regocd-umziehen.sh) | Zieht das CD-Archiv an einen anderen Ort um: Dateien und Einhängepunkt |
 | [`nas/documento.sh`](nas/documento.sh) | Richtet documento auf einem NAS ein (Stundenverwaltung, Abbild aus der eigenen Registry) |
 | [`nas/documento-update.sh`](nas/documento-update.sh) | Holt die neueste documento-Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 
@@ -97,7 +98,8 @@ Die Vorgaben sind eingetragen und passen zum üblichen Aufbau:
 | Sicherung | eingehängter USB-Datenträger | **wird gesucht**, nicht geraten |
 
 **Wo ein NAS seine USB-Datenträger einhängt, ist je Hersteller verschieden** — das Skript
-liest es mit `lsblk` aus und schlägt den gefundenen Pfad vor. Steckt keiner, landet die
+liest es mit `lsblk` aus und schlägt den gefundenen Pfad vor. (Auf UGREEN-Geräten hängen sie
+unter `/mnt/@usb/<gerät>`, nachgemessen an einem DXP2800.) Steckt keiner, landet die
 Sicherung neben der Datenbank; das schützt vor Versehen, nicht vor einem Plattenausfall. Was
 angeschlossen ist, zeigt:
 
@@ -160,6 +162,20 @@ denied" — und das sieht von aussen aus, als liefe kein Container.
 
 Dasselbe prüft das Update-Skript vor jedem Tausch — und bricht ab, statt Aufnahmen zu
 verlieren.
+
+### Das Archiv umziehen
+
+Liegt es am falschen Ort, verschiebt dieses Skript Dateien **und** Einhängepunkt — mit
+Platzprüfung vorher, angehaltenem Dienst währenddessen und einer Zählung danach. Der alte Ort
+bleibt bestehen, bis Sie ihn selbst wegräumen:
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-umziehen.sh)"
+```
+
+Die Datenbank bleibt dabei unberührt: Der Dienst merkt sich die Pfade so, wie er sie im
+Container sieht (`/musik/...`) — was darunter auf dem NAS liegt, geht ihn nichts an. Das Skript
+prüft es trotzdem nach.
 
 **Der Container läuft im Netz des Wirts** (`network_mode: host`). Das ist kein Versehen: Die
 Player im Netz werden über SSDP gesucht, und das ist Multicast — aus einem Bridge-Netz kommt es

@@ -108,6 +108,7 @@ else
   # laufen lassen: Dann steht sie als Vorgabe da.
   warnen "Kein eingehängter USB-Datenträger gefunden."
   warnen "Was angeschlossen ist, zeigt:  lsblk -o NAME,TRAN,SIZE,MOUNTPOINT"
+  warnen "Auf UGREEN-Geräten hängen sie unter /mnt/@usb/<gerät> — gemessen an einem DXP2800."
   frage "  Sicherung (ohne externe Platte)" "${REGOCD_WURZEL}/sicherung" REGOCD_SICHERUNG
 fi
 

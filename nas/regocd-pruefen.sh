@@ -88,7 +88,10 @@ fi
 # Im Container, weil dort Python und die Datenbank beieinander liegen. Gelesen
 # wird nur -- das Skript ändert nichts, es sieht nach.
 schritt "Was die Datenbank sagt"
-docker exec "$BEHAELTER" python3 - <<'PY'
+# **`-i`, sonst bleibt es stumm.** Ohne `-i` reicht `docker exec` die
+# Standardeingabe nicht durch: Python bekommt ein leeres Programm, tut nichts
+# und meldet Erfolg. Der ganze Abschnitt blieb dadurch leer, ohne Fehler.
+docker exec -i "$BEHAELTER" python3 - <<'PY'
 import os
 import sqlite3
 from collections import Counter
