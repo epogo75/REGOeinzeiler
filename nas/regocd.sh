@@ -72,15 +72,44 @@ frage "Zeitzone" "Europe/Berlin" REGOCD_ZEITZONE
 # sie selten beieinander. Das CD-Archiv gehört auf den grossen Speicherpool,
 # die Sicherung auf eine externe Platte (die auch mal abgezogen wird), und die
 # Datenbank auf etwas Zuverlässiges. Der Arbeitsordner ist der einzige, der
-# meist einfach bei der Wurzel bleiben kann -- dort liegen die Daten nur,
+# meist einfach neben der Datenbank bleiben kann -- dort liegen die Daten nur,
 # solange eine CD gerippt wird.
+#
+# **Die Vorgaben sind die des Hauses**, nicht erfunden: Die Musik liegt im
+# Musikbereich (dort suchen die Player), Datenbank und Arbeit im
+# Docker-Bereich (dort gehört die Betriebsablage eines Containers hin).
+# Wer es anders will, tippt es einfach über.
 sagen ""
 sagen "  Wohin die Bereiche gehören:"
-frage "  Grundverzeichnis (Vorgabe für alles Weitere)" "/volume1/regocd" REGOCD_WURZEL
-frage "  CD-Archiv (die FLAC-Dateien, wächst)" "${REGOCD_WURZEL}/musik" REGOCD_ARCHIV
-frage "  Datenbank (mit den Covern, klein)" "${REGOCD_WURZEL}/daten" REGOCD_DATENBANK
-frage "  Sicherung (die externe Platte)" "${REGOCD_WURZEL}/sicherung" REGOCD_SICHERUNG
+frage "  CD-Archiv (die FLAC-Dateien, wächst)" "/volume2/music/regocd" REGOCD_ARCHIV
+frage "  Docker-Ordner (Datenbank und Arbeit darunter)" "/volume1/docker/regocd" REGOCD_WURZEL
+frage "  Datenbank (mit den Covern, klein)" "${REGOCD_WURZEL}/data" REGOCD_DATENBANK
 frage "  Arbeitsordner (nur während des Rippens)" "${REGOCD_WURZEL}/arbeit" REGOCD_ARBEIT
+# **Wohin die Sicherung gehört: auf eine Platte, die nicht im Gerät steckt.**
+# Wo ein NAS seine USB-Datenträger einhängt, ist je Hersteller verschieden --
+# und wer es rät, schreibt die Sicherung in ein leeres Verzeichnis, das
+# aussieht wie ein Einhängepunkt. Deshalb wird nachgesehen statt geraten:
+# `lsblk` weiss, welche Datenträger über USB angeschlossen sind und wo sie
+# hängen.
+USB_ZIEL=""
+if command -v lsblk >/dev/null 2>&1; then
+  # Nur eingehängte USB-Datenträger, und nur die erste Zeile: Bei mehreren
+  # entscheidet der Mensch, nicht das Skript.
+  USB_ZIEL="$(lsblk -rno TRAN,MOUNTPOINT 2>/dev/null \
+    | awk '$1 == "usb" && $2 != "" && $2 != "/" { print $2; exit }')"
+fi
+if [ -n "$USB_ZIEL" ]; then
+  gut "USB-Datenträger gefunden: $USB_ZIEL"
+  frage "  Sicherung (externe Platte)" "${USB_ZIEL}/regocd-sicherung" REGOCD_SICHERUNG
+else
+  # Kein USB-Datenträger da -- dann neben die Datenbank. Das schützt vor
+  # Versehen (eine gelöschte Datenbank ist zurückzuholen), nicht vor einem
+  # Plattenausfall. Sobald eine Platte steckt, dieses Skript noch einmal
+  # laufen lassen: Dann steht sie als Vorgabe da.
+  warnen "Kein eingehängter USB-Datenträger gefunden."
+  warnen "Was angeschlossen ist, zeigt:  lsblk -o NAME,TRAN,SIZE,MOUNTPOINT"
+  frage "  Sicherung (ohne externe Platte)" "${REGOCD_WURZEL}/sicherung" REGOCD_SICHERUNG
+fi
 
 # ------------------------------------------------------------------ Laufwerk
 
@@ -153,8 +182,8 @@ gut "Arbeit     $REGOCD_ARBEIT"
 # Die Sicherungsplatte ist oft nicht angesteckt -- das ist kein Fehler, aber
 # es gehört gesagt, damit später niemand rätselt, warum dort nichts ankommt.
 if ! mountpoint -q "$REGOCD_SICHERUNG" 2>/dev/null && [ "$REGOCD_SICHERUNG" = "${REGOCD_WURZEL}/sicherung" ]; then
-  warnen "Die Sicherung liegt im Grundverzeichnis, also auf derselben Platte."
-  warnen "Eine Sicherung auf derselben Platte schützt vor Versehen, nicht vor Plattenausfall."
+  warnen "Die Sicherung liegt im Docker-Ordner, also auf derselben Platte."
+  warnen "Das schützt vor Versehen, nicht vor Plattenausfall — ein Ziel ausserhalb steht noch aus."
 fi
 
 schritt "Abbild holen"
@@ -228,6 +257,44 @@ fi
 
 ZUSTAND="$(curl -fsS "http://127.0.0.1:${REGOCD_PORT}/api/system" 2>/dev/null \
   | sed -n 's/.*"laufwerk":"\([^"]*\)".*/\1/p')"
+
+# ------------------------------------------------- Landet die Musik draussen?
+#
+# **Die Frage, die sonst erst beim nächsten Update auffällt.** Läuft ein
+# Container ohne Volume (oder mit einem anderen Pfad), schreibt der Dienst
+# fröhlich weiter -- nur eben *in den Container*. Alles sieht richtig aus, die
+# Alben stehen in der Oberfläche, und beim nächsten `docker compose up -d`
+# sind sie weg, weil der Container ersetzt wird.
+#
+# Deshalb wird hier verglichen: Was sieht der Dienst unter /musik, und was
+# liegt auf dem NAS im eingehängten Ordner? Beides muss dasselbe sein.
+schritt "Landet die Musik auf dem NAS?"
+IM_CONTAINER="$(docker exec regocd sh -c 'ls -1 /musik 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')"
+AUF_DEM_NAS="$(ls -1 "$REGOCD_ARCHIV" 2>/dev/null | wc -l | tr -d ' ')"
+: "${IM_CONTAINER:=0}"
+: "${AUF_DEM_NAS:=0}"
+
+if [ "$IM_CONTAINER" -gt 0 ] && [ "$AUF_DEM_NAS" -eq 0 ]; then
+  warnen "Der Dienst sieht ${IM_CONTAINER} Einträge unter /musik — auf dem NAS liegt nichts."
+  warnen "Die Aufnahmen liegen dann IM CONTAINER und sind beim nächsten Update weg."
+  warnen "Retten, bevor der Container ersetzt wird:"
+  warnen "    docker cp regocd:/musik/. \"${REGOCD_ARCHIV}/\""
+  warnen "Danach dieses Skript noch einmal laufen lassen."
+elif [ "$IM_CONTAINER" -ne "$AUF_DEM_NAS" ]; then
+  warnen "Der Dienst sieht ${IM_CONTAINER} Einträge, auf dem NAS liegen ${AUF_DEM_NAS}."
+  warnen "Zeigt ${REGOCD_ARCHIV} wirklich dorthin, wo die Alben liegen?"
+else
+  gut "${AUF_DEM_NAS} Einträge — Dienst und NAS sehen dasselbe"
+fi
+
+# Und die Gegenprobe mit einer Datei: Lesen allein beweist nicht, dass der
+# Dienst auch schreiben darf. Ein Volume, das dem Container nur lesend
+# gehört, fällt sonst erst beim ersten Rippen auf -- nach 40 Minuten.
+if docker exec regocd sh -c 'touch /musik/.regocd-probe && rm -f /musik/.regocd-probe' 2>/dev/null; then
+  gut "der Dienst darf ins Archiv schreiben"
+else
+  warnen "Der Dienst darf NICHT in ${REGOCD_ARCHIV} schreiben — Rechte prüfen."
+fi
 
 sagen ""
 schritt "Fertig"

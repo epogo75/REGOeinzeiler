@@ -101,6 +101,39 @@ if ! grep -q "TZ:" "$EINSTELLUNG"; then
   fi
 fi
 
+# ----------------------------------------- Liegt die Musik wirklich draussen?
+#
+# **Der gefährlichste Augenblick eines Updates.** Gleich wird der Container
+# ersetzt. Alles, was *in ihm* liegt statt in einem eingehängten Ordner, ist
+# danach weg -- und ein Container ohne Volume schreibt fröhlich weiter,
+# solange er läuft: Die Alben stehen in der Oberfläche, die Platte des NAS
+# bleibt leer, und niemand merkt es, bis genau hier getauscht wird.
+#
+# Deshalb wird vorher verglichen, und im Zweifel wird **nicht** getauscht.
+schritt "Liegt die Musik ausserhalb des Containers?"
+ARCHIV="$(grep -oE '/[^ ]+:/musik' "$EINSTELLUNG" 2>/dev/null | head -1 | cut -d: -f1)"
+if [ -z "$ARCHIV" ]; then
+  warnen "In $EINSTELLUNG ist kein Ordner auf /musik eingehängt."
+  warnen "Alles, was gerippt wurde, liegt dann im Container und geht beim Tausch verloren."
+  ende "Bitte zuerst einrichten (nas/regocd.sh) — das Update würde Aufnahmen kosten."
+fi
+
+IM_CONTAINER="$(docker exec regocd sh -c 'ls -1 /musik 2>/dev/null | wc -l' 2>/dev/null | tr -d ' \r')"
+AUF_DEM_NAS="$(ls -1 "$ARCHIV" 2>/dev/null | wc -l | tr -d ' ')"
+: "${IM_CONTAINER:=0}"
+: "${AUF_DEM_NAS:=0}"
+
+if [ "$IM_CONTAINER" -gt 0 ] && [ "$AUF_DEM_NAS" -eq 0 ]; then
+  warnen "Der Dienst sieht ${IM_CONTAINER} Einträge unter /musik, in ${ARCHIV} liegt nichts."
+  warnen "Die Aufnahmen liegen im Container. Ein Tausch würde sie löschen."
+  sagen ""
+  sagen "  Erst retten, dann erneut starten:"
+  sagen "      docker cp regocd:/musik/. \"${ARCHIV}/\""
+  sagen ""
+  ende "Abgebrochen, damit nichts verlorengeht."
+fi
+gut "${AUF_DEM_NAS} Einträge in ${ARCHIV} (der Dienst sieht ${IM_CONTAINER})"
+
 schritt "Neues Abbild holen"
 # Am Rückgabewert, nicht an der Ausgabe: Docker formuliert je nach Ausgabe
 # anders, und eine Warnung, die bei jedem geglückten Lauf erscheint, gewöhnt

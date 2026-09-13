@@ -11,6 +11,7 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | [`proxmox/ubuntu-vm.sh`](proxmox/ubuntu-vm.sh) | Legt auf einem Proxmox-Wirt eine Ubuntu-Server-VM an |
 | [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
 | [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
+| [`nas/regocd-pruefen.sh`](nas/regocd-pruefen.sh) | Sieht nach, wo die Aufnahmen wirklich liegen — ändert nichts |
 | [`nas/documento.sh`](nas/documento.sh) | Richtet documento auf einem NAS ein (Stundenverwaltung, Abbild aus der eigenen Registry) |
 | [`nas/documento-update.sh`](nas/documento-update.sh) | Holt die neueste documento-Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 
@@ -85,6 +86,25 @@ Einhängepunkten **einzeln**: CD-Archiv, Datenbank, Sicherung, Arbeitsordner. Au
 liegen die selten beieinander: Das Archiv gehört auf den grossen Speicherpool, die Sicherung
 auf eine externe Platte, die auch mal abgezogen wird.
 
+Die Vorgaben sind eingetragen und passen zum üblichen Aufbau:
+
+| Bereich | Vorgabe | warum dort |
+|---|---|---|
+| CD-Archiv | `/volume2/music/regocd` | im Musikbereich — dort suchen die Player |
+| Docker-Ordner | `/volume1/docker/regocd` | Betriebsablage eines Containers |
+| Datenbank | `…/data` | klein, gehört zur Betriebsablage |
+| Arbeit | `…/arbeit` | nur belegt, solange eine CD läuft |
+| Sicherung | eingehängter USB-Datenträger | **wird gesucht**, nicht geraten |
+
+**Wo ein NAS seine USB-Datenträger einhängt, ist je Hersteller verschieden** — das Skript
+liest es mit `lsblk` aus und schlägt den gefundenen Pfad vor. Steckt keiner, landet die
+Sicherung neben der Datenbank; das schützt vor Versehen, nicht vor einem Plattenausfall. Was
+angeschlossen ist, zeigt:
+
+```bash
+lsblk -o NAME,TRAN,SIZE,FSTYPE,MOUNTPOINT
+```
+
 ### Ohne Nachfragen, mit eigenen Werten
 
 Jede Frage lässt sich vorab beantworten — der Aufruf bleibt derselbe, das Skript muss nicht
@@ -122,6 +142,21 @@ Aktualisieren später:
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-update.sh)"
 ```
+
+### Wo liegen die Aufnahmen wirklich?
+
+Die Oberfläche zeigt vier Alben, auf der Platte liegt eines — das kann drei Gründe haben, und
+alle drei sehen gleich aus: Die Dateien liegen **im Container** (dann sind sie beim nächsten
+Update weg), unter einem **alten Pfad** (weil die Einhängepunkte später geändert wurden), oder
+sie wurden **gelöscht**. Dieses Skript fragt die Datenbank nach dem Pfad jedes Titels und sagt,
+welcher davon wo liegt. Es ändert nichts:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-pruefen.sh)"
+```
+
+Dasselbe prüft das Update-Skript vor jedem Tausch — und bricht ab, statt Aufnahmen zu
+verlieren.
 
 **Der Container läuft im Netz des Wirts** (`network_mode: host`). Das ist kein Versehen: Die
 Player im Netz werden über SSDP gesucht, und das ist Multicast — aus einem Bridge-Netz kommt es
