@@ -31,6 +31,12 @@ gut()     { printf '%s  ✓%s %s\n' "$GRUEN" "$AUS" "$*"; }
 warnen()  { printf '%s  !%s %s\n' "$GELB" "$AUS" "$*"; }
 ende()    { printf '%s  ✗ %s%s\n' "$ROT" "$*" "$AUS" >&2; exit 1; }
 
+# **Ein Skript, das wortlos endet, ist unbrauchbar.** `set -e` bricht bei
+# jedem Befehl ab, der nicht 0 liefert -- und sagt dabei kein Wort. Diese
+# Falle sagt wenigstens, in welcher Zeile es war; das hat beim Umzug zwei
+# Anläufe gekostet, weil ein erfolgloses `grep` genügte.
+trap 'zeile=$LINENO; printf "%s  ✗ Abbruch in Zeile %s: %s%s\n" "${ROT}" "$zeile" "$BASH_COMMAND" "${AUS}" >&2' ERR
+
 EINSTELLUNG="/etc/regocd/docker-compose.yml"
 
 [ "$(id -u)" -eq 0 ] || ende "Bitte mit sudo ausführen."
@@ -124,9 +130,19 @@ for i in "${ANSTEHEND[@]}"; do
   soll="${SOLLS[$i]}"
   mkdir -p "$soll" || ende "$soll liess sich nicht anlegen."
   [ -w "$soll" ] || ende "$soll ist nicht beschreibbar."
-  braucht="$(du -sk "$quelle" 2>/dev/null | awk '{print $1}')"
-  frei="$(df -Pk "$soll" | awk 'NR == 2 {print $4}')"
-  sagen "  ${NAMEN[$i]}: $(( ${braucht:-0} / 1024 )) MB zu verschieben, $(( frei / 1024 )) MB frei"
+
+  # **Den alten Ordner gibt es nicht immer.** Wer die Einrichtung neu fährt,
+  # bekommt neue, leere Ordner -- die alten kann jemand längst weggeräumt
+  # haben. Dann ist nichts zu kopieren, nur umzuhängen. (`du` auf ein
+  # fehlendes Verzeichnis liefert 1 und beendete das Skript hier wortlos.)
+  if [ ! -d "$quelle" ]; then
+    sagen "  ${NAMEN[$i]}: ${quelle} gibt es nicht — nur umhängen."
+    continue
+  fi
+
+  braucht="$(du -sk "$quelle" 2>/dev/null | awk '{print $1}' || true)"
+  frei="$(df -Pk "$soll" 2>/dev/null | awk 'NR == 2 {print $4}' || true)"
+  sagen "  ${NAMEN[$i]}: $(( ${braucht:-0} / 1024 )) MB zu verschieben, $(( ${frei:-0} / 1024 )) MB frei"
   [ "${frei:-0}" -gt "${braucht:-0}" ] || ende "Auf dem Ziel von ${NAMEN[$i]} ist zu wenig Platz."
 done
 
@@ -151,6 +167,16 @@ for i in "${ANSTEHEND[@]}"; do
   ist="$(ist_pfad "${ZIELE[$i]}")"
   soll="${SOLLS[$i]}"
   name="${NAMEN[$i]}"
+
+  if [ ! -d "$quelle" ]; then
+    schritt "${name} umhängen"
+    gut "nichts zu kopieren — ${quelle} gibt es nicht"
+    if [ "$ist" != "$soll" ]; then
+      sed -i "s|${ist}:${ZIELE[$i]}|${soll}:${ZIELE[$i]}|" "$EINSTELLUNG"
+      gut "${soll} → ${ZIELE[$i]}"
+    fi
+    continue
+  fi
 
   schritt "${name} kopieren"
   sagen "      von ${quelle}"
@@ -189,7 +215,7 @@ done
 schritt "Dienst starten"
 docker compose -f "$EINSTELLUNG" up -d >/dev/null || ende "Der Start ist gescheitert."
 
-PORT="$(sed -n 's/.*REGOCD_PORT: *"\?\([0-9]\+\).*/\1/p' "$EINSTELLUNG" | head -1)"
+PORT="$(sed -n 's/.*REGOCD_PORT: *"\?\([0-9]\+\).*/\1/p' "$EINSTELLUNG" | head -1 || true)"
 PORT="${PORT:-8090}"
 for _ in $(seq 1 30); do
   curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/api/system" >/dev/null 2>&1 && break
@@ -202,9 +228,9 @@ gut "läuft"
 # --------------------------------------------------------------- Nachsehen
 
 schritt "Sieht der Dienst seine Dateien?"
-BEHAELTER="$(docker ps --format '{{.Names}}\t{{.Image}}' \
-  | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }')"
-SICHT="$(docker exec "$BEHAELTER" sh -c 'find /musik -type f | wc -l' 2>/dev/null | tr -d ' \r')"
+BEHAELTER="$(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
+  | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }' || true)"
+SICHT="$(docker exec "$BEHAELTER" sh -c 'find /musik -type f | wc -l' 2>/dev/null | tr -d ' \r' || true)"
 sagen "      ${SICHT} Dateien unter /musik"
 
 # Und was die Datenbank führt: Stehen dort Containerpfade (/musik/...), ist

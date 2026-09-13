@@ -22,6 +22,12 @@ gut()     { printf '%s  ✓%s %s\n' "$GRUEN" "$AUS" "$*"; }
 warnen()  { printf '%s  !%s %s\n' "$GELB" "$AUS" "$*"; }
 ende()    { printf '%s  ✗ %s%s\n' "$ROT" "$*" "$AUS" >&2; exit 1; }
 
+# **Ein Skript, das wortlos endet, ist unbrauchbar.** `set -e` bricht bei
+# jedem Befehl ab, der nicht 0 liefert -- und sagt dabei kein Wort. Diese
+# Falle sagt wenigstens, in welcher Zeile es war; das hat beim Umzug zwei
+# Anläufe gekostet, weil ein erfolgloses `grep` genügte.
+trap 'zeile=$LINENO; printf "%s  ✗ Abbruch in Zeile %s: %s%s\n" "${ROT}" "$zeile" "$BASH_COMMAND" "${AUS}" >&2' ERR
+
 EINSTELLUNG="/etc/regocd/docker-compose.yml"
 
 # ------------------------------------------------------ Die Pfade des Hauses
