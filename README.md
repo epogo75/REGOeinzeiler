@@ -110,16 +110,27 @@ lsblk -o NAME,TRAN,SIZE,FSTYPE,MOUNTPOINT
 ### Ohne Nachfragen, mit eigenen Werten
 
 Jede Frage lässt sich vorab beantworten — der Aufruf bleibt derselbe, das Skript muss nicht
-bearbeitet werden:
+bearbeitet werden. Der Aufruf mit den Pfaden des Hauses, so wie sie auf dem NAS stehen:
 
 ```bash
-sudo env REGOCD_REGISTRY=192.168.1.43:5000 \
-         REGOCD_ARCHIV=/volume2/musik \
-         REGOCD_DATENBANK=/volume1/regocd/daten \
-         REGOCD_SICHERUNG=/mnt/usb-platte \
+sudo env REGOCD_ARCHIV=/volume2/music/regocd \
+         REGOCD_WURZEL=/volume1/docker/regocd \
+         REGOCD_DATENBANK=/volume1/docker/regocd/data \
+         REGOCD_ARBEIT=/volume1/docker/regocd/arbeit \
+         REGOCD_SICHERUNG=/mnt/@usb/sdc1/regocd-sicherung \
          REGOCD_PORT=8090 \
+         REGOCD_STELLE=NAS \
+         REGOCD_STILL=ja \
          bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd.sh)"
 ```
+
+`REGOCD_STILL=ja` nimmt für alles Übrige die Vorgabe (Registry, Laufwerk, Zeitzone) und fragt
+gar nichts.
+
+**Eine bestehende Einrichtung wird nicht stillschweigend überschrieben.** Weichen die neuen
+Pfade von den bisherigen ab und liegen dort Dateien, bricht das Skript ab und verweist auf den
+Umzug — sonst sieht der Dienst danach ein leeres Archiv, während die Aufnahmen unberührt am
+alten Platz liegen. (`REGOCD_TROTZDEM=ja` erzwingt es, wenn man weiß, was man tut.)
 
 | Variable | wofür |
 |---|---|
@@ -130,7 +141,7 @@ sudo env REGOCD_REGISTRY=192.168.1.43:5000 \
 | `REGOCD_WURZEL` | Grundverzeichnis, Vorgabe für die vier folgenden |
 | `REGOCD_ARCHIV` | CD-Archiv (FLAC-Dateien) |
 | `REGOCD_DATENBANK` | Datenbank und Cover |
-| `REGOCD_SICHERUNG` | Sicherungsplatte |
+| `REGOCD_SICHERUNG` | Sicherungsplatte (auf UGREEN: `/mnt/@usb/<gerät>/…`) |
 | `REGOCD_ARBEIT` | Arbeitsordner |
 
 Was gesetzt ist, wird nicht gefragt. `REGOCD_STILL=ja` nimmt für alles Übrige die Vorgabe und

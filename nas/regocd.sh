@@ -174,6 +174,57 @@ PY
   gut "eingetragen"
 fi
 
+# ----------------------------------------- Läuft hier schon eine Einrichtung?
+#
+# **Der Unfall, der genau so passiert ist.** Wer dieses Skript ein zweites Mal
+# fährt, schreibt die Einstellung neu -- und hängt damit womöglich andere
+# Ordner ein als beim ersten Mal. Der Dienst sieht dann ein leeres Archiv,
+# während die Aufnahmen unberührt am alten Platz liegen. In der Oberfläche
+# stehen die Alben weiter da, nur spielt keines mehr.
+#
+# Deshalb wird vorher verglichen, und wo Dateien liegen, wird gefragt.
+ALTE_EINSTELLUNG="/etc/regocd/docker-compose.yml"
+if [ -f "$ALTE_EINSTELLUNG" ]; then
+  schritt "Bisherige Einrichtung"
+  ABWEICHUNG=""
+  pruefe_alt() {
+    local ziel="$1" neu_pfad="$2" name="$3" alt_pfad anzahl
+    alt_pfad="$(grep -oE "/[^ ]+:${ziel}\b" "$ALTE_EINSTELLUNG" 2>/dev/null \
+      | head -1 | cut -d: -f1 || true)"
+    [ -n "$alt_pfad" ] || return 0
+    [ "$alt_pfad" != "$neu_pfad" ] || { gut "${name}: bleibt ${alt_pfad}"; return 0; }
+    anzahl="$(find "$alt_pfad" -type f 2>/dev/null | wc -l | tr -d ' ' || true)"
+    if [ "${anzahl:-0}" -gt 0 ]; then
+      warnen "${name}: ${anzahl} Dateien liegen unter ${alt_pfad}, eingehängt wird ${neu_pfad}."
+      ABWEICHUNG="ja"
+    else
+      gut "${name}: ${alt_pfad} war leer → ${neu_pfad}"
+    fi
+  }
+  pruefe_alt "/musik"     "$REGOCD_ARCHIV"    "CD-Archiv"
+  pruefe_alt "/data"      "$REGOCD_DATENBANK" "Datenbank"
+  pruefe_alt "/arbeit"    "$REGOCD_ARBEIT"    "Arbeit"
+  pruefe_alt "/sicherung" "$REGOCD_SICHERUNG" "Sicherung"
+
+  if [ -n "$ABWEICHUNG" ]; then
+    sagen ""
+    warnen "Diese Dateien zieht die Einrichtung NICHT mit. Der Dienst fände sie danach nicht."
+    sagen "  Zum Umziehen (Dateien und Einhängepunkte):"
+    sagen "      sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-umziehen.sh)\""
+    sagen ""
+    if [ "${REGOCD_STILL:-}" = "ja" ]; then
+      ende "Abgebrochen — erst umziehen. (Mit REGOCD_TROTZDEM=ja liesse es sich erzwingen.)"
+    fi
+    if [ "${REGOCD_TROTZDEM:-}" != "ja" ]; then
+      read -r -p "  Trotzdem neu einrichten? [j/N]: " weiter </dev/tty || true
+      case "${weiter:-N}" in [JjYy]*) : ;; *) ende "Abgebrochen — erst umziehen." ;; esac
+    fi
+  fi
+  # Die bisherige Einstellung bleibt daneben liegen: Sie ist die Spur zu den
+  # Dateien, falls doch etwas am alten Platz steht.
+  cp "$ALTE_EINSTELLUNG" "${ALTE_EINSTELLUNG}.vor-regocd"
+fi
+
 # ------------------------------------------------------------------ Einrichten
 
 schritt "Verzeichnisse anlegen"
