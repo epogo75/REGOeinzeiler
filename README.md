@@ -12,7 +12,7 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
 | [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 | [`nas/regocd-pruefen.sh`](nas/regocd-pruefen.sh) | Sieht nach, wo die Aufnahmen wirklich liegen — ändert nichts |
-| [`nas/regocd-umziehen.sh`](nas/regocd-umziehen.sh) | Zieht das CD-Archiv an einen anderen Ort um: Dateien und Einhängepunkt |
+| [`nas/regocd-umziehen.sh`](nas/regocd-umziehen.sh) | Zieht die Ordner an ihren vorgesehenen Ort um: Dateien und Einhängepunkte |
 | [`nas/documento.sh`](nas/documento.sh) | Richtet documento auf einem NAS ein (Stundenverwaltung, Abbild aus der eigenen Registry) |
 | [`nas/documento-update.sh`](nas/documento-update.sh) | Holt die neueste documento-Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
 
@@ -163,11 +163,11 @@ denied" — und das sieht von aussen aus, als liefe kein Container.
 Dasselbe prüft das Update-Skript vor jedem Tausch — und bricht ab, statt Aufnahmen zu
 verlieren.
 
-### Das Archiv umziehen
+### Ordner umziehen
 
-Liegt es am falschen Ort, verschiebt dieses Skript Dateien **und** Einhängepunkt — mit
-Platzprüfung vorher, angehaltenem Dienst währenddessen und einer Zählung danach. Der alte Ort
-bleibt bestehen, bis Sie ihn selbst wegräumen:
+Liegt etwas am falschen Ort, verschiebt dieses Skript Dateien **und** Einhängepunkte — alle
+vier Bereiche, jeder einzeln geprüft: Platz vorher, Dienst angehalten währenddessen, Zählung
+danach. Die alten Ordner bleiben bestehen, bis Sie sie selbst wegräumen:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-umziehen.sh)"

@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 #
-# Zieht das CD-Archiv an einen anderen Ort um -- Dateien und Einhängepunkt.
+# Zieht die Ordner von REGOcd an ihren vorgesehenen Ort um -- Dateien **und**
+# Einhängepunkte.
 #
 #   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-umziehen.sh)"
 #
 # **Warum das ein eigenes Skript ist und kein Handgriff:** Zwischen „Dateien
 # verschieben" und „Einhängepunkt ändern" liegt ein Zustand, in dem der Dienst
 # ins Leere greift. Läuft er dabei, schreibt er neue Aufnahmen an den alten
-# Ort -- und beim nächsten Blick fehlt die Hälfte. Deshalb: anhalten,
-# umziehen, umhängen, starten, nachsehen.
+# Ort -- und beim nächsten Blick fehlt die Hälfte. Deshalb: anhalten, alle
+# Bereiche umziehen, umhängen, starten, nachsehen.
 #
-# **Die Datenbank bleibt unberührt**, und das ist kein Zufall: Der Dienst
-# merkt sich die Pfade so, wie er sie im Container sieht (/musik/...). Was
-# darunter auf dem NAS liegt, geht ihn nichts an. Deshalb genügt es, die
-# Dateien zu verschieben und das Volume umzuhängen. Das Skript prüft das
+# **Die Datenbank bleibt inhaltlich unberührt**, und das ist kein Zufall: Der
+# Dienst merkt sich die Pfade so, wie er sie im Container sieht (/musik/...).
+# Was darunter auf dem NAS liegt, geht ihn nichts an. Deshalb genügt es, die
+# Dateien zu verschieben und die Volumes umzuhängen. Das Skript prüft das
 # trotzdem nach -- eine Annahme, die nur meistens stimmt, ist keine.
 
 set -euo pipefail
@@ -36,41 +37,57 @@ EINSTELLUNG="/etc/regocd/docker-compose.yml"
 command -v docker >/dev/null 2>&1 || ende "Docker fehlt."
 [ -f "$EINSTELLUNG" ] || ende "$EINSTELLUNG fehlt — REGOcd ist hier nicht eingerichtet."
 
-frage() {
-  local text="$1" vorgabe="$2" ziel="$3" eingabe=""
-  local gesetzt="${!ziel-}"
-  if [ -n "$gesetzt" ]; then sagen "  ${text}: ${gesetzt}"; return; fi
-  read -r -p "  ${text} [${vorgabe}]: " eingabe </dev/tty || true
-  printf -v "$ziel" '%s' "${eingabe:-$vorgabe}"
-}
+# Dieselben Pfade wie im Update-Skript. Jeder lässt sich überschreiben.
+SOLL_ARCHIV="${REGOCD_ARCHIV:-/volume2/music/regocd}"
+SOLL_DATEN="${REGOCD_DATENBANK:-/volume1/docker/regocd/data}"
+SOLL_ARBEIT="${REGOCD_ARBEIT:-/volume1/docker/regocd/arbeit}"
+SOLL_SICHERUNG="${REGOCD_SICHERUNG:-/mnt/@usb/sdc1/regocd-sicherung}"
 
-# ------------------------------------------------------------------- Woher
+ist_pfad() { grep -oE "/[^ ]+:$1\b" "$EINSTELLUNG" | head -1 | cut -d: -f1; }
 
-ALT="$(grep -oE '/[^ ]+:/musik' "$EINSTELLUNG" | head -1 | cut -d: -f1)"
-[ -n "$ALT" ] || ende "In $EINSTELLUNG ist kein Ordner auf /musik eingehängt."
+# ------------------------------------------------------------- Was ansteht
 
-schritt "Umzug des CD-Archivs"
-sagen "  Bisher:  $ALT"
-frage "  Neuer Ort" "/volume2/music/regocd" REGOCD_ARCHIV
-NEU="$REGOCD_ARCHIV"
+schritt "Was umzuziehen wäre"
+ZIELE=("/musik" "/data" "/arbeit" "/sicherung")
+SOLLS=("$SOLL_ARCHIV" "$SOLL_DATEN" "$SOLL_ARBEIT" "$SOLL_SICHERUNG")
+NAMEN=("CD-Archiv" "Datenbank" "Arbeit" "Sicherung")
+ANSTEHEND=()
 
-[ "$ALT" != "$NEU" ] || ende "Alter und neuer Ort sind derselbe."
-[ -d "$ALT" ] || ende "$ALT gibt es nicht."
+for i in "${!ZIELE[@]}"; do
+  ist="$(ist_pfad "${ZIELE[$i]}")"
+  soll="${SOLLS[$i]}"
+  name="${NAMEN[$i]}"
+  if [ -z "$ist" ]; then
+    warnen "${name}: nichts auf ${ZIELE[$i]} eingehängt — bitte erst einrichten."
+  elif [ "$ist" = "$soll" ]; then
+    gut "${name}: ${ist}"
+  else
+    anzahl="$(find "$ist" -type f 2>/dev/null | wc -l | tr -d ' ')"
+    sagen "      ${name}: ${ist}  →  ${soll}   (${anzahl} Dateien)"
+    ANSTEHEND+=("$i")
+  fi
+done
 
-mkdir -p "$NEU" || ende "$NEU liess sich nicht anlegen."
-[ -w "$NEU" ] || ende "$NEU ist nicht beschreibbar."
+if [ "${#ANSTEHEND[@]}" -eq 0 ]; then
+  sagen ""
+  gut "Alles liegt schon dort, wo es hingehört."
+  exit 0
+fi
 
-# Passt es überhaupt? Ein Umzug, der bei 80 % vollläuft, hinterlässt die
-# Sammlung auf zwei Platten -- das ist schlimmer als gar nicht anzufangen.
-BRAUCHT="$(du -sk "$ALT" 2>/dev/null | awk '{print $1}')"
-FREI="$(df -Pk "$NEU" | awk 'NR == 2 {print $4}')"
+# Passt es? Ein Umzug, der bei 80 % vollläuft, hinterlässt die Sammlung auf
+# zwei Platten -- das ist schlimmer als gar nicht anzufangen.
 sagen ""
-sagen "  Zu verschieben: $(( BRAUCHT / 1024 )) MB"
-sagen "  Frei auf dem Ziel: $(( FREI / 1024 )) MB"
-[ "$FREI" -gt "$BRAUCHT" ] || ende "Auf dem Ziel ist zu wenig Platz."
+for i in "${ANSTEHEND[@]}"; do
+  ist="$(ist_pfad "${ZIELE[$i]}")"
+  soll="${SOLLS[$i]}"
+  mkdir -p "$soll" || ende "$soll liess sich nicht anlegen."
+  [ -w "$soll" ] || ende "$soll ist nicht beschreibbar."
+  braucht="$(du -sk "$ist" 2>/dev/null | awk '{print $1}')"
+  frei="$(df -Pk "$soll" | awk 'NR == 2 {print $4}')"
+  sagen "  ${NAMEN[$i]}: $(( ${braucht:-0} / 1024 )) MB zu verschieben, $(( frei / 1024 )) MB frei"
+  [ "${frei:-0}" -gt "${braucht:-0}" ] || ende "Auf dem Ziel von ${NAMEN[$i]} ist zu wenig Platz."
+done
 
-DATEIEN_VORHER="$(find "$ALT" -type f | wc -l | tr -d ' ')"
-sagen "  Dateien: $DATEIEN_VORHER"
 sagen ""
 read -r -p "  Umziehen? [j/N]: " weiter </dev/tty || true
 case "${weiter:-N}" in [JjYy]*) : ;; *) ende "Abgebrochen." ;; esac
@@ -81,34 +98,37 @@ schritt "Dienst anhalten"
 docker compose -f "$EINSTELLUNG" stop >/dev/null 2>&1 || warnen "Liess sich nicht anhalten."
 gut "angehalten"
 
+cp "$EINSTELLUNG" "${EINSTELLUNG}.vor-umzug"
+
 # ---------------------------------------------------------------- Verschieben
 #
-# Mit `cp -a` und erst danach löschen, nicht mit `mv`: Zwischen zwei
-# Datenträgern kopiert `mv` ohnehin und löscht dann -- bricht es dabei ab,
-# fehlt am Ziel das eine und an der Quelle das andere. So liegt bis zum
-# letzten Schritt alles noch am alten Platz.
-schritt "Dateien kopieren"
-if command -v rsync >/dev/null 2>&1; then
-  rsync -a --info=progress2 "$ALT"/ "$NEU"/ || ende "Das Kopieren ist gescheitert."
-else
-  cp -a "$ALT"/. "$NEU"/ || ende "Das Kopieren ist gescheitert."
-fi
+# Kopiert wird, gelöscht wird nicht: Bricht es ab, liegt alles noch am alten
+# Platz. Weggeräumt wird am Ende vom Menschen, nicht vom Skript.
+for i in "${ANSTEHEND[@]}"; do
+  ist="$(ist_pfad "${ZIELE[$i]}")"
+  soll="${SOLLS[$i]}"
+  name="${NAMEN[$i]}"
 
-DATEIEN_NACHHER="$(find "$NEU" -type f | wc -l | tr -d ' ')"
-[ "$DATEIEN_NACHHER" -ge "$DATEIEN_VORHER" ] \
-  || ende "Am Ziel liegen $DATEIEN_NACHHER Dateien, erwartet waren $DATEIEN_VORHER."
-gut "$DATEIEN_NACHHER Dateien liegen unter $NEU"
+  schritt "${name} kopieren"
+  vorher="$(find "$ist" -type f | wc -l | tr -d ' ')"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --info=progress2 "$ist"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
+  else
+    cp -a "$ist"/. "$soll"/ 2>/dev/null || ende "${name}: Kopieren gescheitert."
+  fi
+  nachher="$(find "$soll" -type f | wc -l | tr -d ' ')"
+  [ "$nachher" -ge "$vorher" ] \
+    || ende "${name}: am Ziel liegen ${nachher} Dateien, erwartet waren ${vorher}."
+  gut "${nachher} Dateien unter ${soll}"
 
-# ------------------------------------------------------------------ Umhängen
+  # Mit | als Trenner, weil im Pfad Schrägstriche stehen.
+  sed -i "s|${ist}:${ZIELE[$i]}|${soll}:${ZIELE[$i]}|" "$EINSTELLUNG"
+  grep -q "${soll}:${ZIELE[$i]}" "$EINSTELLUNG" \
+    || ende "${name}: Die Zeile liess sich nicht ändern — siehe $EINSTELLUNG."
+  gut "${soll} → ${ZIELE[$i]}"
+done
 
-schritt "Einhängepunkt ändern"
-cp "$EINSTELLUNG" "${EINSTELLUNG}.vor-umzug"
-# Nur die eine Zeile, die auf /musik zeigt -- und mit | als Trenner, weil im
-# Pfad Schrägstriche stehen.
-sed -i "s|${ALT}:/musik|${NEU}:/musik|" "$EINSTELLUNG"
-grep -q "${NEU}:/musik" "$EINSTELLUNG" \
-  || ende "Die Zeile liess sich nicht ändern — bitte in $EINSTELLUNG nachsehen."
-gut "${NEU} → /musik"
+# -------------------------------------------------------------------- Starten
 
 schritt "Dienst starten"
 docker compose -f "$EINSTELLUNG" up -d >/dev/null || ende "Der Start ist gescheitert."
@@ -124,18 +144,16 @@ curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/system" >/dev/null 2>&1 \
 gut "läuft"
 
 # --------------------------------------------------------------- Nachsehen
-#
-# Erst wenn der Dienst die Dateien am neuen Ort wirklich sieht, darf der alte
-# Ort weg. Bis dahin ist er die Rückfallebene.
+
 schritt "Sieht der Dienst seine Dateien?"
 BEHAELTER="$(docker ps --format '{{.Names}}\t{{.Image}}' \
   | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }')"
 SICHT="$(docker exec "$BEHAELTER" sh -c 'find /musik -type f | wc -l' 2>/dev/null | tr -d ' \r')"
-sagen "      $SICHT Dateien unter /musik"
+sagen "      ${SICHT} Dateien unter /musik"
 
 # Und was die Datenbank führt: Stehen dort Containerpfade (/musik/...), ist
 # nichts weiter zu tun. Stünden dort Wirtspfade, zeigten sie jetzt ins Leere.
-FREMD="$(docker exec -i "$BEHAELTER" python3 - <<PY 2>/dev/null || true
+FREMD="$(docker exec -i "$BEHAELTER" python3 - <<'PY' 2>/dev/null || true
 import os, sqlite3
 from pathlib import Path
 datei = Path(os.environ.get("REGOCD_DATA_DIR", "/data")) / "regocd.db"
@@ -148,19 +166,20 @@ else:
 PY
 )"
 if [ "${FREMD:-0}" -gt 0 ]; then
-  warnen "${FREMD} Titel führen einen Pfad ausserhalb von /musik."
-  warnen "Sie zeigen ins Leere. In der Oberfläche „Bibliothek prüfen“ laufen lassen."
+  warnen "${FREMD} Titel führen einen Pfad ausserhalb von /musik — sie zeigen ins Leere."
+  warnen "In der Oberfläche „Bibliothek prüfen“ laufen lassen."
 else
   gut "die Datenbank führt Containerpfade — nichts umzuschreiben"
 fi
 
 sagen ""
 schritt "Fertig"
-sagen "  CD-Archiv    ${NEU}"
-sagen "  Alter Ort    ${ALT}   (liegt noch da)"
-sagen "  Einstellung  ${EINSTELLUNG}   (vorherige: ${EINSTELLUNG}.vor-umzug)"
+for i in "${!ZIELE[@]}"; do
+  printf '  %-11s %s\n' "${NAMEN[$i]}" "$(ist_pfad "${ZIELE[$i]}")"
+done
+sagen "  Einstellung ${EINSTELLUNG}   (vorherige: ${EINSTELLUNG}.vor-umzug)"
 sagen ""
-sagen "  **Erst nachsehen, dann aufräumen.** Wenn in der Oberfläche alle Alben"
-sagen "  spielen, kann der alte Ort weg:"
-sagen "      rm -rf \"${ALT}\""
+sagen "  Erst nachsehen, dann aufräumen. Wenn in der Oberfläche alles da ist"
+sagen "  und spielt, können die alten Ordner weg — sie stehen oben unter"
+sagen "  „Was umzuziehen wäre“ als erster Pfad jeder Zeile."
 sagen ""

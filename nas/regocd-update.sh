@@ -24,6 +24,22 @@ ende()    { printf '%s  ✗ %s%s\n' "$ROT" "$*" "$AUS" >&2; exit 1; }
 
 EINSTELLUNG="/etc/regocd/docker-compose.yml"
 
+# ------------------------------------------------------ Die Pfade des Hauses
+#
+# **Hier stehen sie, damit niemand sie tippen muss.** Das Update hängt sie
+# nicht einfach um -- wo Dateien liegen, entscheidet nicht ein Update. Es
+# vergleicht und sagt, was abweicht: Ein leerer Einhängepunkt wird
+# nachgetragen, ein voller bleibt, und dafür gibt es das Umzugsskript.
+#
+# Jeder Wert lässt sich vorab überschreiben (REGOCD_ARCHIV=... usw.).
+SOLL_ARCHIV="${REGOCD_ARCHIV:-/volume2/music/regocd}"
+SOLL_DATEN="${REGOCD_DATENBANK:-/volume1/docker/regocd/data}"
+SOLL_ARBEIT="${REGOCD_ARBEIT:-/volume1/docker/regocd/arbeit}"
+# Die externe Platte. Auf UGREEN-Geräten hängen USB-Datenträger unter
+# /mnt/@usb/<gerät>; steckt sie nicht, bleibt die Sicherung, wo sie ist --
+# eine Sicherung, die ins Leere läuft, ist schlimmer als eine am falschen Ort.
+SOLL_SICHERUNG="${REGOCD_SICHERUNG:-/mnt/@usb/sdc1/regocd-sicherung}"
+
 [ "$(id -u)" -eq 0 ] || ende "Bitte als root ausführen (oder mit sudo)."
 [ -f "$EINSTELLUNG" ] || ende "$EINSTELLUNG fehlt — REGOcd ist hier nicht eingerichtet."
 command -v docker >/dev/null 2>&1 || ende "Docker fehlt."
@@ -99,6 +115,55 @@ if ! grep -q "TZ:" "$EINSTELLUNG"; then
     sed -i "/REGOCD_PORT/a\      TZ: \"${ZONE}\"" "$EINSTELLUNG"
     gut "${ZONE} eingetragen (mit REGOCD_ZEITZONE=... änderbar)"
   fi
+fi
+
+# ------------------------------------------------------- Stimmen die Pfade?
+#
+# Verglichen wird gegen die Pfade des Hauses (oben). Umgehängt wird nur, was
+# gefahrlos ist: ein Einhängepunkt, der fehlt, oder einer, dessen alter Ort
+# leer ist. Wo Dateien liegen, bleibt es beim alten Ort -- und es steht da,
+# was zu tun wäre.
+pfad_pruefen() {
+  local ziel="$1" soll="$2" name="$3"
+  local ist
+  ist="$(grep -oE "/[^ ]+:${ziel}\b" "$EINSTELLUNG" | head -1 | cut -d: -f1)"
+
+  if [ -z "$ist" ]; then
+    warnen "${name}: nichts auf ${ziel} eingehängt — wird auf ${soll} gesetzt."
+    mkdir -p "$soll"
+    sed -i "/volumes:/a\      ${soll}:${ziel}" "$EINSTELLUNG"
+    return
+  fi
+  if [ "$ist" = "$soll" ]; then
+    gut "${name}: ${ist}"
+    return
+  fi
+
+  local anzahl
+  anzahl="$(find "$ist" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${anzahl:-0}" -eq 0 ]; then
+    mkdir -p "$soll"
+    sed -i "s|${ist}:${ziel}|${soll}:${ziel}|" "$EINSTELLUNG"
+    gut "${name}: ${ist} war leer → ${soll}"
+  else
+    warnen "${name}: liegt unter ${ist} (${anzahl} Dateien), vorgesehen ist ${soll}."
+    warnen "Ein Update verschiebt nichts. Zum Umziehen:"
+    sagen  "      sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-umziehen.sh)\""
+  fi
+}
+
+schritt "Stimmen die Pfade?"
+cp "$EINSTELLUNG" "${EINSTELLUNG}.vor-update"
+pfad_pruefen "/musik"     "$SOLL_ARCHIV"    "CD-Archiv"
+pfad_pruefen "/data"      "$SOLL_DATEN"     "Datenbank"
+pfad_pruefen "/arbeit"    "$SOLL_ARBEIT"    "Arbeit"
+# Die Sicherung nur, wenn die Platte auch steckt -- sonst schreibt der
+# Nachtdienst in ein Verzeichnis, das aussieht wie ein Einhängepunkt.
+if [ -d "$(dirname "$SOLL_SICHERUNG")" ]; then
+  pfad_pruefen "/sicherung" "$SOLL_SICHERUNG" "Sicherung"
+else
+  warnen "Sicherung: $(dirname "$SOLL_SICHERUNG") gibt es nicht — bleibt, wie es ist."
+  warnen "Steckt die Platte? Was angeschlossen ist, zeigt: lsblk -o NAME,TRAN,SIZE,MOUNTPOINT"
 fi
 
 # ----------------------------------------- Liegt die Musik wirklich draussen?
