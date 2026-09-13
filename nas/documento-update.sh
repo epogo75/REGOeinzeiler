@@ -34,12 +34,12 @@ ALT="$(docker inspect --format '{{.Image}}' documento 2>/dev/null || true)"
 # Einrichtungen nutzten noch eine Port-Abbildung "aussen:8080" -- beides wird
 # gelesen, damit ein Update nicht an der eigenen Vorgeschichte scheitert.
 PORT="$(sed -n 's/.*DOCUMENTO_PORT: *"\?\([0-9]\+\).*/\1/p' "$EINSTELLUNG" | head -1)"
-[ -z "$PORT" ] && PORT="$(sed -n 's/.*"\([0-9]\+\):8091".*/\1/p' "$EINSTELLUNG" | head -1)"
+[ -z "$PORT" ] && PORT="$(sed -n 's/.*"\([0-9]\+\):8091".*/\1/p' "$EINSTELLUNG" | head -1)" || true
 PORT="${PORT:-8091}"
 
 VORHER="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/version" 2>/dev/null \
   | sed -n 's/.*"build":\([0-9]*\).*/\1/p')"
-[ -n "$VORHER" ] && sagen "  Läuft gerade: Build ${VORHER}"
+[ -n "$VORHER" ] && sagen "  Läuft gerade: Build ${VORHER}" || true
 
 # Wo die Daten liegen -- das Wichtigste beim Update: Sie liegen **ausserhalb**
 # des Containers. Getauscht wird nur das Abbild; Datenbank, Musik und Cover
@@ -92,7 +92,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 2
 done
-[ -n "$BEREIT" ] && gut "antwortet"
+[ -n "$BEREIT" ] && gut "antwortet" || true
 
 if [ -z "$BEREIT" ]; then
   warnen "Die neue Ausgabe antwortet nicht. Was sie sagt:"

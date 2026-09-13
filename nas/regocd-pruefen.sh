@@ -58,7 +58,7 @@ fi
 BEHAELTER="${REGOCD_CONTAINER:-}"
 if [ -z "$BEHAELTER" ]; then
   BEHAELTER="$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
-    | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }')"
+    | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }' || true)"
 fi
 if [ -z "$BEHAELTER" ]; then
   warnen "Kein Container mit einem REGOcd-Abbild gefunden. Vorhanden sind:"

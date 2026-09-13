@@ -35,9 +35,9 @@ ende()    { printf '%s  ✗ %s%s\n' "$ROT" "$*" "$AUS" >&2; exit 1; }
 ZU_RAEUMEN=""
 aufraeumen() {
   local stand=$?
-  [ -n "$ZU_RAEUMEN" ] && rm -f "$ZU_RAEUMEN"
-  [ -n "${GEHEIM:-}" ] && rm -f "$GEHEIM"
-  [ -n "${SCHLUESSEL_DATEI:-}" ] && rm -f "$SCHLUESSEL_DATEI"
+  [ -n "$ZU_RAEUMEN" ] && rm -f "$ZU_RAEUMEN" || true
+  [ -n "${GEHEIM:-}" ] && rm -f "$GEHEIM" || true
+  [ -n "${SCHLUESSEL_DATEI:-}" ] && rm -f "$SCHLUESSEL_DATEI" || true
   if [ "$stand" -ne 0 ] && [ -n "${VM_ANGELEGT:-}" ]; then
     warnen "Abgebrochen. Die halbfertige VM $VM_ANGELEGT wird entfernt."
     qm destroy "$VM_ANGELEGT" --purge >/dev/null 2>&1 || true
@@ -81,7 +81,7 @@ naechste_freie_id() {
   local id
   if command -v pvesh >/dev/null 2>&1; then
     id="$(pvesh get /cluster/nextid 2>/dev/null || true)"
-    [ -n "$id" ] && { printf '%s' "$id"; return; }
+    if [ -n "$id" ]; then printf '%s' "$id"; return; fi
   fi
   id=100
   while qm status "$id" >/dev/null 2>&1 || pct status "$id" >/dev/null 2>&1; do
@@ -124,7 +124,7 @@ while [ -z "${PASSWORT:-}" ]; do
   read -r -s -p "  Passwort für ${VM_BENUTZER}: " PASSWORT </dev/tty; echo
   [ -n "$PASSWORT" ] || { warnen "Das Passwort darf nicht leer sein."; continue; }
   read -r -s -p "  Passwort wiederholen: " PASSWORT2 </dev/tty; echo
-  [ "$PASSWORT" = "$PASSWORT2" ] && break
+  if [ "$PASSWORT" = "$PASSWORT2" ]; then break; fi
   warnen "Die beiden Eingaben stimmen nicht überein."
   PASSWORT=""
 done
@@ -146,7 +146,7 @@ done
 
 sagen "  Weitere öffentliche Schlüssel einfügen (leere Zeile beendet):"
 while IFS= read -r zeile </dev/tty; do
-  [ -z "$zeile" ] && break
+  if [ -z "$zeile" ]; then break; fi
   case "$zeile" in
     ssh-*|ecdsa-*) printf '%s\n' "$zeile" >> "$SCHLUESSEL_DATEI" ;;
     *) warnen "Das sieht nicht nach einem öffentlichen Schlüssel aus — übergangen." ;;
@@ -154,7 +154,7 @@ while IFS= read -r zeile </dev/tty; do
 done
 
 SSH_SCHLUESSEL=""
-[ -s "$SCHLUESSEL_DATEI" ] && SSH_SCHLUESSEL="$SCHLUESSEL_DATEI"
+[ -s "$SCHLUESSEL_DATEI" ] && SSH_SCHLUESSEL="$SCHLUESSEL_DATEI" || true
 
 # ------------------------------------------------------------------- Abbild
 

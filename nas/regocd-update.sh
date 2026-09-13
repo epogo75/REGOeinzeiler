@@ -50,12 +50,12 @@ ALT="$(docker inspect --format '{{.Image}}' regocd 2>/dev/null || true)"
 # Einrichtungen nutzten noch eine Port-Abbildung "aussen:8080" -- beides wird
 # gelesen, damit ein Update nicht an der eigenen Vorgeschichte scheitert.
 PORT="$(sed -n 's/.*REGOCD_PORT: *"\?\([0-9]\+\).*/\1/p' "$EINSTELLUNG" | head -1)"
-[ -z "$PORT" ] && PORT="$(sed -n 's/.*"\([0-9]\+\):8080".*/\1/p' "$EINSTELLUNG" | head -1)"
+[ -z "$PORT" ] && PORT="$(sed -n 's/.*"\([0-9]\+\):8080".*/\1/p' "$EINSTELLUNG" | head -1)" || true
 PORT="${PORT:-8090}"
 
 VORHER="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/version" 2>/dev/null \
   | sed -n 's/.*"build":\([0-9]*\).*/\1/p')"
-[ -n "$VORHER" ] && sagen "  Läuft gerade: Build ${VORHER}"
+[ -n "$VORHER" ] && sagen "  Läuft gerade: Build ${VORHER}" || true
 
 # Wo die Daten liegen -- das Wichtigste beim Update: Sie liegen **ausserhalb**
 # des Containers. Getauscht wird nur das Abbild; Datenbank, Musik und Cover
@@ -126,7 +126,8 @@ fi
 pfad_pruefen() {
   local ziel="$1" soll="$2" name="$3"
   local ist
-  ist="$(grep -oE "/[^ ]+:${ziel}\b" "$EINSTELLUNG" | head -1 | cut -d: -f1)"
+  # Ohne `|| true` beendet ein erfolgloses `grep` unter `set -e` das Skript.
+  ist="$(grep -oE "/[^ ]+:${ziel}\b" "$EINSTELLUNG" 2>/dev/null | head -1 | cut -d: -f1 || true)"
 
   if [ -z "$ist" ]; then
     warnen "${name}: nichts auf ${ziel} eingehängt — wird auf ${soll} gesetzt."
@@ -176,7 +177,7 @@ fi
 #
 # Deshalb wird vorher verglichen, und im Zweifel wird **nicht** getauscht.
 schritt "Liegt die Musik ausserhalb des Containers?"
-ARCHIV="$(grep -oE '/[^ ]+:/musik' "$EINSTELLUNG" 2>/dev/null | head -1 | cut -d: -f1)"
+ARCHIV="$(grep -oE '/[^ ]+:/musik' "$EINSTELLUNG" 2>/dev/null | head -1 | cut -d: -f1 || true)"
 if [ -z "$ARCHIV" ]; then
   warnen "In $EINSTELLUNG ist kein Ordner auf /musik eingehängt."
   warnen "Alles, was gerippt wurde, liegt dann im Container und geht beim Tausch verloren."
@@ -220,7 +221,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 2
 done
-[ -n "$BEREIT" ] && gut "antwortet"
+[ -n "$BEREIT" ] && gut "antwortet" || true
 
 if [ -z "$BEREIT" ]; then
   warnen "Die neue Ausgabe antwortet nicht. Was sie sagt:"
@@ -256,7 +257,7 @@ fi
 sagen "  Oberfläche: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${PORT}"
 ALBEN="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/system" 2>/dev/null \
   | sed -n 's/.*"alben":\([0-9]*\).*/\1/p')"
-[ -n "$ALBEN" ] && sagen "  Bibliothek: ${ALBEN} Alben — unverändert"
+[ -n "$ALBEN" ] && sagen "  Bibliothek: ${ALBEN} Alben — unverändert" || true
 
 # Alte Abbilder liegen sonst unbemerkt herum -- auf einem NAS mit begrenztem
 # Systemspeicher fällt das irgendwann unangenehm auf.

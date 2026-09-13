@@ -130,7 +130,7 @@ fi
 GRUPPE=""
 if [ -n "$REGOCD_LAUFWERK" ]; then
   GRUPPE="$(stat -c '%g' "$REGOCD_LAUFWERK" 2>/dev/null || true)"
-  [ -n "$GRUPPE" ] && gut "Laufwerk gehört Gruppe $GRUPPE"
+  [ -n "$GRUPPE" ] && gut "Laufwerk gehört Gruppe $GRUPPE" || true
 fi
 
 # ------------------------------------------------------------------- Registry
@@ -230,10 +230,12 @@ if [ -n "$REGOCD_LAUFWERK" ]; then
     devices:
       - ${REGOCD_LAUFWERK}:/dev/sr0
 COMPOSE
-  [ -n "$GRUPPE" ] && cat >> /etc/regocd/docker-compose.yml <<COMPOSE
+  if [ -n "$GRUPPE" ]; then
+    cat >> /etc/regocd/docker-compose.yml <<COMPOSE
     group_add:
       - "${GRUPPE}"
 COMPOSE
+  fi
 fi
 
 docker compose -f /etc/regocd/docker-compose.yml up -d >/dev/null \

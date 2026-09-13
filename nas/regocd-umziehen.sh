@@ -43,7 +43,11 @@ SOLL_DATEN="${REGOCD_DATENBANK:-/volume1/docker/regocd/data}"
 SOLL_ARBEIT="${REGOCD_ARBEIT:-/volume1/docker/regocd/arbeit}"
 SOLL_SICHERUNG="${REGOCD_SICHERUNG:-/mnt/@usb/sdc1/regocd-sicherung}"
 
-ist_pfad() { grep -oE "/[^ ]+:$1\b" "$EINSTELLUNG" | head -1 | cut -d: -f1; }
+# **Das `|| true` ist nicht Bequemlichkeit, sondern nötig.** Findet `grep`
+# nichts, liefert es 1; unter `set -euo pipefail` bricht die Zuweisung -- und
+# damit das ganze Skript -- wortlos ab. „Kein Treffer" ist hier aber eine
+# gültige Antwort: Dann ist eben nichts eingehängt.
+ist_pfad() { grep -oE "/[^ ]+:$1\b" "$EINSTELLUNG" 2>/dev/null | head -1 | cut -d: -f1 || true; }
 
 # **Wo lag es vorher?** Jedes Skript hier legt die alte Einstellung daneben,
 # bevor es sie ändert. Genau darin steht, wohin ein Einhängepunkt früher
@@ -54,13 +58,13 @@ frueher_pfad() {
   for datei in "${EINSTELLUNG}.vor-umzug" "${EINSTELLUNG}.vor-update" \
                "${EINSTELLUNG}.vor-regocd"; do
     [ -f "$datei" ] || continue
-    grep -oE "/[^ ]+:${ziel}\b" "$datei" | head -1 | cut -d: -f1
+    grep -oE "/[^ ]+:${ziel}\b" "$datei" 2>/dev/null | head -1 | cut -d: -f1 || true
     return
   done
 }
 
 # Wie viele Dateien liegen in einem Ordner? Leer heisst hier: keine einzige.
-dateien_in() { find "$1" -type f 2>/dev/null | wc -l | tr -d ' '; }
+dateien_in() { find "$1" -type f 2>/dev/null | wc -l | tr -d ' ' || true; }
 
 # ------------------------------------------------------------- Was ansteht
 
@@ -88,7 +92,9 @@ for i in "${!ZIELE[@]}"; do
     hier="$(dateien_in "$ist")"
     vorher="$(frueher_pfad "${ZIELE[$i]}")"
     dort=0
-    [ -n "$vorher" ] && [ "$vorher" != "$ist" ] && dort="$(dateien_in "$vorher")"
+    if [ -n "$vorher" ] && [ "$vorher" != "$ist" ]; then
+      dort="$(dateien_in "$vorher")"
+    fi
     if [ "${hier:-0}" -eq 0 ] && [ "${dort:-0}" -gt 0 ]; then
       warnen "${name}: ${ist} ist LEER — ${dort} Dateien liegen noch unter ${vorher}."
       QUELLEN[$i]="$vorher"
@@ -151,7 +157,14 @@ for i in "${ANSTEHEND[@]}"; do
   sagen "      nach ${soll}"
   vorher="$(dateien_in "$quelle")"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --info=progress2 "$quelle"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
+    # Fortschritt nur am Terminal: In eine Datei geleitet schreibt
+    # `--info=progress2` tausend Zeilen, in denen die eine Meldung untergeht,
+    # auf die es ankommt.
+    if [ -t 1 ]; then
+      rsync -a --info=progress2 "$quelle"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
+    else
+      rsync -a "$quelle"/ "$soll"/ || ende "${name}: Kopieren gescheitert."
+    fi
   else
     cp -a "$quelle"/. "$soll"/ 2>/dev/null || ende "${name}: Kopieren gescheitert."
   fi
