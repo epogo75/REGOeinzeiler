@@ -152,8 +152,11 @@ sie wurden **gelöscht**. Dieses Skript fragt die Datenbank nach dem Pfad jedes 
 welcher davon wo liegt. Es ändert nichts:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-pruefen.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-pruefen.sh)"
 ```
+
+**Mit `sudo`**: Ohne Rechte am Docker-Socket scheitert jede Frage an Docker mit „permission
+denied" — und das sieht von aussen aus, als liefe kein Container.
 
 Dasselbe prüft das Update-Skript vor jedem Tausch — und bricht ab, statt Aufnahmen zu
 verlieren.

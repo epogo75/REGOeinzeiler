@@ -33,16 +33,49 @@ gut()     { printf '%s  ✓%s %s\n' "$GRUEN" "$AUS" "$*"; }
 warnen()  { printf '%s  !%s %s\n' "$GELB" "$AUS" "$*"; }
 ende()    { printf '%s  ✗ %s%s\n' "$ROT" "$*" "$AUS" >&2; exit 1; }
 
-EINSTELLUNG="/etc/regocd/docker-compose.yml"
+# ------------------------------------------------- Welcher Container ist es?
+#
+# **Nicht am Namen festmachen.** Wer den Container über die Oberfläche des
+# NAS anlegt, vergibt einen eigenen Namen -- und genau dann stimmt auch sonst
+# oft etwas nicht, weil die Einhängepunkte dort von Hand eingetragen werden.
+# Gesucht wird deshalb am Abbild: Was „regocd" im Namen des Abbilds trägt,
+# ist es.
+command -v docker >/dev/null 2>&1 || ende \
+  "Docker gibt es hier nicht. Dieses Skript gehört auf das Gerät, auf dem REGOcd läuft."
 
-command -v docker >/dev/null 2>&1 || ende "Docker fehlt."
-docker inspect regocd >/dev/null 2>&1 || ende "Der Container „regocd“ läuft hier nicht."
+# **Darf ich Docker überhaupt fragen?** Ohne Rechte am Docker-Socket scheitert
+# jeder Aufruf mit „permission denied" -- und ein Skript, das daraus „läuft
+# nicht" macht, schickt einen auf die falsche Fährte. Genau das ist passiert.
+if ! docker ps >/dev/null 2>&1; then
+  warnen "Docker antwortet nicht — vermutlich fehlen die Rechte."
+  sagen ""
+  sagen "  Noch einmal mit sudo:"
+  sagen "      sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd-pruefen.sh)\""
+  sagen ""
+  ende "Ohne Zugriff auf Docker ist nichts zu sehen."
+fi
+
+BEHAELTER="${REGOCD_CONTAINER:-}"
+if [ -z "$BEHAELTER" ]; then
+  BEHAELTER="$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
+    | awk -F'\t' 'tolower($2) ~ /regocd/ { print $1; exit }')"
+fi
+if [ -z "$BEHAELTER" ]; then
+  warnen "Kein Container mit einem REGOcd-Abbild gefunden. Vorhanden sind:"
+  docker ps -a --format '      {{.Names}}   {{.Image}}   {{.Status}}' 2>/dev/null | head -20
+  sagen ""
+  sagen "  Läuft REGOcd auf einem anderen Gerät? Dann dieses Skript dort ausführen."
+  sagen "  Heisst der Container anders und trägt ein fremdes Abbild:"
+  sagen "      REGOCD_CONTAINER=<name> bash -c \"\$(curl -fsSL .../nas/regocd-pruefen.sh)\""
+  ende "Nichts zu prüfen."
+fi
+gut "Container: $BEHAELTER ($(docker inspect -f '{{.Config.Image}}' "$BEHAELTER" 2>/dev/null))"
 
 schritt "Was eingehängt ist"
-docker inspect -f '{{range .Mounts}}      {{.Source}} → {{.Destination}}{{"\n"}}{{end}}' regocd \
+docker inspect -f '{{range .Mounts}}      {{.Source}} → {{.Destination}}{{"\n"}}{{end}}' "$BEHAELTER" \
   | sed '/^\s*$/d'
 
-ARCHIV="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/musik"}}{{.Source}}{{end}}{{end}}' regocd)"
+ARCHIV="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/musik"}}{{.Source}}{{end}}{{end}}' "$BEHAELTER")"
 if [ -z "$ARCHIV" ]; then
   warnen "Auf /musik ist NICHTS eingehängt."
   warnen "Alles Gerippte liegt dann im Container und geht beim nächsten Update verloren."
@@ -55,7 +88,7 @@ fi
 # Im Container, weil dort Python und die Datenbank beieinander liegen. Gelesen
 # wird nur -- das Skript ändert nichts, es sieht nach.
 schritt "Was die Datenbank sagt"
-docker exec regocd python3 - <<'PY'
+docker exec "$BEHAELTER" python3 - <<'PY'
 import os
 import sqlite3
 from collections import Counter
@@ -111,7 +144,7 @@ fi
 
 # Und im Container selbst: Was dort unter /musik liegt und **nicht** aus dem
 # eingehängten Ordner kommt, ist genau das, was beim Update verlorengeht.
-IM_CONTAINER="$(docker exec regocd sh -c 'find /musik -name "*.flac" 2>/dev/null | wc -l' | tr -d ' \r')"
+IM_CONTAINER="$(docker exec "$BEHAELTER" sh -c 'find /musik -name "*.flac" 2>/dev/null | wc -l' | tr -d ' \r')"
 sagen "      ${IM_CONTAINER} FLAC-Dateien sieht der Dienst unter /musik"
 
 # ----------------------------------------------- Wohin die Sicherung könnte
@@ -136,12 +169,12 @@ sagen ""
 schritt "Was daraus folgt"
 if [ -z "$ARCHIV" ]; then
   warnen "Ohne eingehängtes Archiv: erst retten, dann einrichten."
-  sagen  "      docker cp regocd:/musik/. /volume2/music/regocd/"
+  sagen  "      docker cp ${BEHAELTER}:/musik/. /volume2/music/regocd/"
   sagen  "      bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/nas/regocd.sh)\""
 elif [ "${IM_CONTAINER:-0}" -gt "${ANZAHL:-0}" ]; then
   warnen "Der Dienst sieht mehr Dateien als auf der Platte liegen."
   warnen "Der Unterschied liegt im Container und geht beim nächsten Update verloren:"
-  sagen  "      docker cp regocd:/musik/. \"${ARCHIV}/\""
+  sagen  "      docker cp ${BEHAELTER}:/musik/. \"${ARCHIV}/\""
 else
   gut "Dienst und Platte sehen dasselbe."
   sagen "      Fehlen oben Alben, liegen ihre Dateien unter einem alten Pfad —"
