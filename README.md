@@ -8,6 +8,7 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 
 | Skript | Was es tut |
 |---|---|
+| [`proxmox/ubuntu-lxc.sh`](proxmox/ubuntu-lxc.sh) | Legt auf einem Proxmox-Wirt einen LXC-Container an (Ubuntu LTS oder Debian) |
 | [`proxmox/ubuntu-vm.sh`](proxmox/ubuntu-vm.sh) | Legt auf einem Proxmox-Wirt eine Ubuntu-Server-VM an |
 | [`nas/regocd.sh`](nas/regocd.sh) | Richtet REGOcd auf einem NAS ein (Abbild aus der eigenen Registry) |
 | [`nas/regocd-update.sh`](nas/regocd-update.sh) | Holt die neueste Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
@@ -15,6 +16,48 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 | [`nas/regocd-umziehen.sh`](nas/regocd-umziehen.sh) | Zieht die Ordner an ihren vorgesehenen Ort um: Dateien und Einhängepunkte |
 | [`nas/documento.sh`](nas/documento.sh) | Richtet documento auf einem NAS ein (Stundenverwaltung, Abbild aus der eigenen Registry) |
 | [`nas/documento-update.sh`](nas/documento-update.sh) | Holt die neueste documento-Ausgabe und startet sie, mit Rückweg bei Fehlschlag |
+
+## LXC-Container auf Proxmox
+
+Auf dem **Proxmox-Wirt** als `root` ausführen, die Kennung am Ende:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-lxc.sh)" _ 123
+```
+
+**Das Skript fragt nichts.** Das `_` vor der Kennung muss sein (bei `bash -c` ist das erste
+Wort danach der Programmname). Ohne Kennung nimmt es die nächste freie.
+
+**Was dabei herauskommt:** ein laufender, unprivilegierter Container mit dem neuesten Ubuntu
+LTS, Netz über DHCP, Benutzer `rego` mit sudo, SSH mit Schlüssel oder Passwort, alle Pakete
+aktuell, startet mit dem Wirt. „nesting" und „keyctl" sind an, damit auch Docker darin läuft.
+Am Ende stehen Adresse und – falls erzeugt – das Passwort.
+
+| Variable | Vorgabe |
+|---|---|
+| `CT_SYSTEM` | `ubuntu` (neueste LTS) – oder `debian` (neueste) |
+| `CT_NAME` | `ubuntu-<kennung>` |
+| `CT_RAM` / `CT_SWAP` | `2048` / `512` (MB) |
+| `CT_KERNE` | `2` |
+| `CT_PLATTE` | `16` (GB) |
+| `CT_BENUTZER` | `rego` |
+| `CT_SPEICHER` | der erste aktive Speicher für Container, sonst `local-lvm` |
+| `CT_BRUECKE` | `vmbr0` |
+| `CT_PASSWORT` | wird erzeugt (16 Zeichen) und am Ende **einmal** angezeigt |
+| `CT_SCHLUESSEL` | weitere öffentliche SSH-Schlüssel, eine Zeile je Schlüssel, oder ein Dateipfad |
+| `CT_AUTOSTART` | `ja` |
+| `CT_PRIVILEGIERT` | `nein` – privilegiert heißt: root im Container ist root auf dem Wirt |
+
+Beispiel mit eigenen Werten:
+
+```bash
+CT_NAME=regobase CT_RAM=4096 CT_PLATTE=32 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-lxc.sh)" _ 123
+```
+
+**Container oder VM?** Ein Container teilt sich den Kern mit dem Wirt, startet in Sekunden
+und belegt nur, was die Dienste darin brauchen. Was einen eigenen Kern will (eigene
+Kernmodule, ein anderes Betriebssystem, harte Trennung), gehört in die VM darunter.
 
 ## Ubuntu-Server-VM auf Proxmox
 
