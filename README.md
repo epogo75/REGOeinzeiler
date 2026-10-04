@@ -18,15 +18,36 @@ Einzeiler für wiederkehrende Einrichtungsarbeiten. Ein Befehl, ein paar Fragen,
 
 ## Ubuntu-Server-VM auf Proxmox
 
-Auf dem **Proxmox-Wirt** als `root` ausführen:
+Auf dem **Proxmox-Wirt** als `root` ausführen, die VM-Kennung am Ende:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)" _ 123
 ```
 
-Gefragt wird nach VM-Kennung, Name, Speicher, Kernen, Platte, Benutzername und Passwort —
-alles mit brauchbaren Vorgaben, sodass meist Enter genügt. Die freie Kennung schlägt Proxmox
-selbst vor.
+**Das Skript fragt nichts.** Das `_` vor der Kennung muss sein: Bei `bash -c` ist das erste
+Wort danach der Programmname, erst das zweite das Argument. Ohne Kennung nimmt es die
+nächste freie.
+
+Alles andere hat eine Vorgabe und lässt sich davor als Variable setzen:
+
+```bash
+VM_NAME=regotest VM_RAM=8192 VM_PLATTE=64 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)" _ 123
+```
+
+| Variable | Vorgabe |
+|---|---|
+| `VM_NAME` | `ubuntu-<kennung>` |
+| `VM_RAM` | `4096` (MB) |
+| `VM_KERNE` | `2` |
+| `VM_PLATTE` | `32` (GB) |
+| `VM_BENUTZER` | `rego` |
+| `VM_SPEICHER` | der erste aktive Speicher für Abbilder, sonst `local-lvm` |
+| `VM_BRUECKE` | `vmbr0` |
+| `VM_PASSWORT` | wird erzeugt (16 Zeichen) und am Ende **einmal** angezeigt |
+| `VM_SCHLUESSEL` | weitere öffentliche SSH-Schlüssel, eine Zeile je Schlüssel, oder ein Dateipfad |
+
+Die SSH-Schlüssel des Wirts (`/root/.ssh/`) werden von selbst übernommen.
 
 **Was dabei herauskommt:** eine laufende VM mit dem neuesten Ubuntu LTS, Netz über DHCP,
 Benutzer `rego` (änderbar), QEMU-Gastdienst an, serieller Konsole. Anmelden geht per SSH oder
@@ -46,8 +67,13 @@ sudo sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/
 sudo systemctl restart ssh
 ```
 
-Schlüssel sind der bessere Weg: Das Skript fragt beim Anlegen nach weiteren öffentlichen
-Schlüsseln, damit nicht nur der Wirt hineinkommt, sondern auch das Notebook.
+Schlüssel sind der bessere Weg: Mit `VM_SCHLUESSEL` kommt nicht nur der Wirt hinein, sondern
+auch das Notebook:
+
+```bash
+VM_SCHLUESSEL="ssh-ed25519 AAAA… stephan@notebook" \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)" _ 123
+```
 
 ### Entscheidungen, die das Skript trifft
 
@@ -147,8 +173,7 @@ alten Platz liegen. (`REGOCD_TROTZDEM=ja` erzwingt es, wenn man weiß, was man t
 Was gesetzt ist, wird nicht gefragt. `REGOCD_STILL=ja` nimmt für alles Übrige die Vorgabe und
 fragt gar nichts — dann läuft das Skript ohne Zutun durch.
 
-Beim VM-Skript geht dasselbe mit `VM_ID`, `VM_NAME`, `VM_RAM`, `VM_KERNE`, `VM_PLATTE`,
-`VM_BENUTZER`, `VM_SPEICHER`, `VM_BRUECKE`, `VM_PASSWORT` und `VM_STILL=ja`.
+Das VM-Skript fragt ohnehin nichts; seine Variablen stehen [oben](#ubuntu-server-vm-auf-proxmox).
 
 Aktualisieren später:
 

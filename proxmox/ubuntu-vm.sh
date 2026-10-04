@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
 #
 # Legt auf einem Proxmox-Wirt eine Ubuntu-Server-VM an: neuestes LTS als
-# Cloud-Abbild, DHCP, Benutzer "rego". Kennung und Passwort werden gefragt.
+# Cloud-Abbild, DHCP, Benutzer "rego". Fragt nichts -- die Kennung kommt als
+# Argument, alles andere hat eine Vorgabe und lässt sich als Umgebungsvariable
+# setzen:
+#
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)" _ 123
+#
+# Das "_" ist kein Tippfehler: Bei `bash -c` ist das erste Wort danach $0, erst
+# das zweite ist $1. Ohne Kennung nimmt das Skript die nächste freie.
+#
+#   VM_NAME, VM_RAM (MB), VM_KERNE, VM_PLATTE (GB), VM_BENUTZER, VM_SPEICHER,
+#   VM_BRUECKE, VM_PASSWORT, VM_SCHLUESSEL (öffentliche Schlüssel, eine Zeile
+#   je Schlüssel, oder ein Dateipfad)
+#
+# Ohne VM_PASSWORT wird ein Passwort erzeugt und am Ende einmal angezeigt.
+#
+# WARUM OHNE FRAGEN (seit 04.10.2026). Vorher fragte das Skript nach allem;
+# VM_STILL=ja sollte das abstellen, aber Passwort und Schlüssel wurden trotzdem
+# vom Terminal gelesen. Ein Skript, das man mit einer Kennung aufruft und das
+# dann durchläuft, ist der häufigere Fall -- und es lässt sich in eine Schleife
+# oder ein anderes Skript setzen.
 #
 # Immer die Server-Variante, nie ein Desktop: Das Cloud-Abbild
 # (ubuntu-*-server-cloudimg-amd64.img) bringt keine grafische Oberfläche mit
 # und soll auch keine bekommen -- eine VM, die Dienste trägt, braucht kein
 # Fenster, und ein Desktop kostet Speicher, Platte und Angriffsfläche.
-#
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/epogo75/REGOeinzeiler/main/proxmox/ubuntu-vm.sh)"
 #
 # Warum ein Cloud-Abbild und keine ISO-Installation: Das Abbild ist fertig
 # eingerichtet und startet in etwa einer Minute. Eine ISO-Installation müsste
@@ -51,29 +68,17 @@ trap aufraeumen EXIT
 command -v qm >/dev/null 2>&1 || ende "Kein 'qm' gefunden — läuft das hier wirklich auf Proxmox?"
 command -v curl >/dev/null 2>&1 || ende "curl fehlt."
 
-# ------------------------------------------------------------------- Abfragen
+# ------------------------------------------------------------------ Werte
 
-# frage <Text> <Vorgabe> <Variablenname>
+# wert <Text> <Vorgabe> <Variablenname>
 #
-# Jede Frage lässt sich vorab beantworten: Der Name der Zielvariablen ist
-# zugleich die Umgebungsvariable. So bleibt das Skript unverändert nutzbar --
-# wer es über `curl` aufruft, kann seine Werte trotzdem setzen, ohne es
-# bearbeiten zu müssen. Mit VM_STILL=ja wird gar nicht gefragt.
-frage() {
-  local text="$1" vorgabe="$2" ziel="$3" eingabe=""
+# Gesetzt ist, was als Umgebungsvariable mitkommt, sonst die Vorgabe. Gefragt
+# wird nichts; angezeigt wird jeder Wert, damit man sieht, womit gebaut wird.
+wert() {
+  local text="$1" vorgabe="$2" ziel="$3"
   local gesetzt="${!ziel-}"
-
-  if [ -n "$gesetzt" ]; then
-    sagen "  ${text}: ${gesetzt}"
-    return
-  fi
-  if [ "${VM_STILL:-}" = "ja" ]; then
-    printf -v "$ziel" '%s' "$vorgabe"
-    sagen "  ${text}: ${vorgabe}"
-    return
-  fi
-  read -r -p "  ${text} [${vorgabe}]: " eingabe </dev/tty || true
-  printf -v "$ziel" '%s' "${eingabe:-$vorgabe}"
+  printf -v "$ziel" '%s' "${gesetzt:-$vorgabe}"
+  sagen "  ${text}: ${!ziel}"
 }
 
 naechste_freie_id() {
@@ -93,65 +98,72 @@ naechste_freie_id() {
 schritt "Ubuntu-Server-VM auf Proxmox anlegen"
 sagen ""
 
-VORGABE_ID="$(naechste_freie_id)"
-frage "VM-Kennung (ID)" "$VORGABE_ID" VM_ID
-[[ "$VM_ID" =~ ^[0-9]+$ ]] || ende "Die Kennung muss eine Zahl sein."
+# Die Kennung: erstes Argument, sonst VM_ID, sonst die nächste freie.
+[ -n "${1:-}" ] && VM_ID="$1"
+wert "VM-Kennung (ID)" "$(naechste_freie_id)" VM_ID
+[[ "$VM_ID" =~ ^[0-9]+$ ]] || ende "Die Kennung muss eine Zahl sein, nicht '$VM_ID'."
 [ "$VM_ID" -ge 100 ] || ende "Proxmox vergibt Kennungen ab 100."
 if qm status "$VM_ID" >/dev/null 2>&1 || pct status "$VM_ID" >/dev/null 2>&1; then
   ende "Kennung $VM_ID ist schon vergeben."
 fi
 
-frage "Name der VM" "ubuntu-$VM_ID" VM_NAME
-frage "Arbeitsspeicher in MB" "4096" VM_RAM
-frage "Prozessorkerne" "2" VM_KERNE
-frage "Festplatte in GB" "32" VM_PLATTE
-frage "Benutzername" "rego" VM_BENUTZER
+wert "Name der VM" "ubuntu-$VM_ID" VM_NAME
+wert "Arbeitsspeicher in MB" "4096" VM_RAM
+wert "Prozessorkerne" "2" VM_KERNE
+wert "Festplatte in GB" "32" VM_PLATTE
+wert "Benutzername" "rego" VM_BENUTZER
 
 # Speicherort: der erste, der Abbilder aufnehmen kann.
 VORGABE_SPEICHER="$(
   pvesm status --content images 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}'
 )"
-frage "Speicherort" "${VORGABE_SPEICHER:-local-lvm}" VM_SPEICHER
-frage "Netzwerkbrücke" "vmbr0" VM_BRUECKE
+wert "Speicherort" "${VORGABE_SPEICHER:-local-lvm}" VM_SPEICHER
+wert "Netzwerkbrücke" "vmbr0" VM_BRUECKE
 
-# Passwort verdeckt und zweimal -- ein Tippfehler fiele sonst erst beim
-# Anmelden auf, wenn die VM schon läuft.
+# Kein Passwort mitgegeben: eines erzeugen. Leer darf es nicht bleiben, und
+# ein festes Vorgabepasswort stünde in einem öffentlichen Skript -- für jede
+# VM, die damit gebaut wurde, dasselbe.
+PASSWORT_ERZEUGT="nein"
 if [ -n "${VM_PASSWORT:-}" ]; then
   PASSWORT="$VM_PASSWORT"
   sagen "  Passwort für ${VM_BENUTZER}: (aus VM_PASSWORT übernommen)"
+else
+  # Ohne verwechselbare Zeichen (0/O, 1/l/I): Es wird von Hand abgetippt.
+  PASSWORT="$(LC_ALL=C tr -dc 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789' </dev/urandom | head -c 16 || true)"
+  [ "${#PASSWORT}" -eq 16 ] || ende "Es liess sich kein Passwort erzeugen."
+  PASSWORT_ERZEUGT="ja"
+  sagen "  Passwort für ${VM_BENUTZER}: (wird erzeugt, steht am Ende)"
 fi
-while [ -z "${PASSWORT:-}" ]; do
-  read -r -s -p "  Passwort für ${VM_BENUTZER}: " PASSWORT </dev/tty; echo
-  [ -n "$PASSWORT" ] || { warnen "Das Passwort darf nicht leer sein."; continue; }
-  read -r -s -p "  Passwort wiederholen: " PASSWORT2 </dev/tty; echo
-  if [ "$PASSWORT" = "$PASSWORT2" ]; then break; fi
-  warnen "Die beiden Eingaben stimmen nicht überein."
-  PASSWORT=""
-done
-unset PASSWORT2
 
-# Öffentliche Schlüssel sammeln. Der des Wirts liegt nahe, reicht aber nicht:
-# Wer von einem anderen Rechner zugreift -- Notebook, ein weiterer Container --,
-# stünde sonst vor verschlossener Tür.
+# Öffentliche Schlüssel: die des Wirts von selbst, dazu VM_SCHLUESSEL. Der
+# des Wirts allein reicht oft nicht -- wer vom Notebook zugreift, stünde sonst
+# vor verschlossener Tür.
 SCHLUESSEL_DATEI="$(mktemp)"
 ZU_RAEUMEN="$SCHLUESSEL_DATEI"
 
 for kandidat in /root/.ssh/id_ed25519.pub /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys; do
   if [ -s "$kandidat" ]; then
-    read -r -p "  Schlüssel aus $kandidat übernehmen? [J/n]: " antwort </dev/tty || true
-    case "${antwort:-J}" in [Nn]*) : ;; *) cat "$kandidat" >> "$SCHLUESSEL_DATEI" ;; esac
+    cat "$kandidat" >> "$SCHLUESSEL_DATEI"
+    sagen "  Schlüssel aus ${kandidat} übernommen"
     break
   fi
 done
 
-sagen "  Weitere öffentliche Schlüssel einfügen (leere Zeile beendet):"
-while IFS= read -r zeile </dev/tty; do
-  if [ -z "$zeile" ]; then break; fi
-  case "$zeile" in
-    ssh-*|ecdsa-*) printf '%s\n' "$zeile" >> "$SCHLUESSEL_DATEI" ;;
-    *) warnen "Das sieht nicht nach einem öffentlichen Schlüssel aus — übergangen." ;;
-  esac
-done
+if [ -n "${VM_SCHLUESSEL:-}" ]; then
+  if [ -f "$VM_SCHLUESSEL" ]; then
+    zusatz="$(cat "$VM_SCHLUESSEL")"
+  else
+    zusatz="$VM_SCHLUESSEL"
+  fi
+  while IFS= read -r zeile; do
+    [ -z "$zeile" ] && continue
+    case "$zeile" in
+      ssh-*|ecdsa-*|sk-*) printf '%s\n' "$zeile" >> "$SCHLUESSEL_DATEI" ;;
+      *) warnen "Aus VM_SCHLUESSEL übergangen, kein öffentlicher Schlüssel: ${zeile:0:30}…" ;;
+    esac
+  done <<< "$zusatz"
+  unset zusatz
+fi
 
 SSH_SCHLUESSEL=""
 [ -s "$SCHLUESSEL_DATEI" ] && SSH_SCHLUESSEL="$SCHLUESSEL_DATEI" || true
@@ -238,7 +250,7 @@ VM_ANGELEGT="$VM_ID"
 # Ab hier räumt der Abbruchpfad die VM wieder weg.
 schritt "Abbild einspielen"
 qm importdisk "$VM_ID" "$DATEI" "$VM_SPEICHER" >/dev/null 2>&1 \
-  || ende "Das Abbild liess sich nicht nach '$SPEICHER' einspielen."
+  || ende "Das Abbild liess sich nicht nach '$VM_SPEICHER' einspielen."
 
 # Wie die eingespielte Platte heisst, hängt vom Speichertyp ab -- deshalb
 # nicht raten, sondern aus der Beschreibung lesen.
@@ -312,7 +324,9 @@ if [ "$PASSWORT_SSH" = "nein" ]; then
 fi
 
 rm -f "$GEHEIM"
-unset PASSWORT
+# Ein erzeugtes Passwort muss bis zur Zusammenfassung leben -- sonst wüsste
+# niemand, wie es heisst. Ein mitgegebenes kennt man ja.
+[ "$PASSWORT_ERZEUGT" = "ja" ] || unset PASSWORT
 
 if [ -n "$SSH_SCHLUESSEL" ]; then
   if qm set "$VM_ID" --sshkeys "$SSH_SCHLUESSEL" >/dev/null 2>&1; then
@@ -336,8 +350,12 @@ schritt "Fertig"
 sagen "  Kennung   $VM_ID"
 sagen "  Name      $VM_NAME"
 sagen "  System    Ubuntu $VERSION LTS Server (ohne Oberfläche)"
-sagen "  Benutzer  $BENUTZER"
-sagen "  Netz      DHCP über $BRUECKE"
+sagen "  Benutzer  $VM_BENUTZER"
+if [ "$PASSWORT_ERZEUGT" = "ja" ]; then
+  sagen "  Passwort  ${FETT}${PASSWORT}${AUS}   (erzeugt -- jetzt notieren, es steht nirgends sonst)"
+  unset PASSWORT
+fi
+sagen "  Netz      DHCP über $VM_BRUECKE"
 sagen ""
 sagen '  Die Adresse steht nach etwa einer Minute im Reiter "Zusammenfassung"' 
 sagen "  (der QEMU-Gastdienst meldet sie), oder hier:"
